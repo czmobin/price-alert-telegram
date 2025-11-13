@@ -16,8 +16,6 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 import pytz
 
 from config import TELEGRAM_BOT_TOKEN, TIMEZONE, CRYPTO_SYMBOLS, DEFAULT_CRYPTOS
@@ -37,7 +35,6 @@ PHONE_NUMBER, SELECT_TIME, SELECT_CRYPTOS = range(3)
 # نمونه‌های global
 db = Database()
 price_fetcher = PriceFetcher()
-scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
 
 
 class InvestmentBot:
@@ -264,7 +261,11 @@ class InvestmentBot:
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(message, reply_markup=reply_markup)
+        # بررسی اینکه آیا از command آمده یا callback
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(message, reply_markup=reply_markup)
 
     async def select_cryptos_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای انتخاب ارزهای دیجیتال"""
@@ -440,6 +441,44 @@ class InvestmentBot:
             f"🕐 هر روز در ساعت {time_text} گزارش قیمت‌ها برای شما ارسال می‌شود."
         )
 
+    async def enable_notification_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای فعال کردن اعلان"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # فعال کردن نوتیفیکیشن
+        db.update_notification_settings(user_id, enabled=True)
+
+        await query.answer("✅ اعلان‌ها فعال شدند")
+
+        # بارگذاری مجدد تنظیمات
+        settings = db.get_user_settings(user_id)
+        if settings and settings['notification_time']:
+            self.schedule_user_notification(user_id, settings['notification_time'])
+
+        # نمایش تنظیمات
+        await self.settings_command(update, context)
+
+    async def disable_notification_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای غیرفعال کردن اعلان"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # غیرفعال کردن نوتیفیکیشن
+        db.update_notification_settings(user_id, enabled=False)
+
+        # حذف job زمان‌بندی
+        if self.application and self.application.job_queue:
+            job_name = f'notification_{user_id}'
+            current_jobs = self.application.job_queue.get_jobs_by_name(job_name)
+            for job in current_jobs:
+                job.schedule_removal()
+
+        await query.answer("✅ اعلان‌ها غیرفعال شدند")
+
+        # نمایش تنظیمات
+        await self.settings_command(update, context)
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """دستور /help"""
         help_text = """
@@ -475,21 +514,28 @@ class InvestmentBot:
     def schedule_user_notification(self, user_id: int, notification_time: str):
         """برنامه‌ریزی ارسال خودکار برای کاربر"""
         try:
+            if not self.application or not self.application.job_queue:
+                logger.error("JobQueue در دسترس نیست")
+                return
+
             hour, minute = map(int, notification_time.split(':'))
 
             # حذف job قبلی اگر وجود دارد
-            job_id = f'notification_{user_id}'
-            existing_job = scheduler.get_job(job_id)
-            if existing_job:
-                scheduler.remove_job(job_id)
+            job_name = f'notification_{user_id}'
+            current_jobs = self.application.job_queue.get_jobs_by_name(job_name)
+            for job in current_jobs:
+                job.schedule_removal()
+
+            # تبدیل زمان به time object با timezone
+            tz = pytz.timezone(TIMEZONE)
+            scheduled_time = time(hour=hour, minute=minute, tzinfo=tz)
 
             # اضافه کردن job جدید
-            scheduler.add_job(
+            self.application.job_queue.run_daily(
                 self.send_scheduled_price,
-                CronTrigger(hour=hour, minute=minute, timezone=pytz.timezone(TIMEZONE)),
-                args=[user_id],
-                id=job_id,
-                replace_existing=True
+                time=scheduled_time,
+                data=user_id,
+                name=job_name
             )
 
             logger.info(f"زمان‌بندی برای کاربر {user_id} در ساعت {notification_time} تنظیم شد")
@@ -497,9 +543,12 @@ class InvestmentBot:
         except Exception as e:
             logger.error(f"خطا در زمان‌بندی: {e}")
 
-    async def send_scheduled_price(self, user_id: int):
+    async def send_scheduled_price(self, context: ContextTypes.DEFAULT_TYPE):
         """ارسال قیمت‌ها در زمان برنامه‌ریزی شده"""
         try:
+            # دریافت user_id از job data
+            user_id = context.job.data
+
             # دریافت تنظیمات کاربر
             settings = db.get_user_settings(user_id)
 
@@ -530,7 +579,7 @@ class InvestmentBot:
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # ارسال پیام
-            await self.application.bot.send_message(
+            await context.bot.send_message(
                 chat_id=user_id,
                 text=message,
                 reply_markup=reply_markup
@@ -612,6 +661,12 @@ class InvestmentBot:
             self.setup_schedule_callback, pattern='^setup_schedule$'
         ))
         self.application.add_handler(CallbackQueryHandler(
+            self.enable_notification_callback, pattern='^enable_notification$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.disable_notification_callback, pattern='^disable_notification$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
             self.settings_command, pattern='^back_to_settings$'
         ))
 
@@ -621,8 +676,7 @@ class InvestmentBot:
             self.receive_schedule_time
         ))
 
-        # راه‌اندازی scheduler
-        scheduler.start()
+        # بارگذاری زمان‌بندی‌های ذخیره شده
         self.load_scheduled_notifications()
 
         # اجرای ربات
