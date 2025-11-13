@@ -621,7 +621,7 @@ class InvestmentBot:
         except Exception as e:
             logger.error(f"خطا در بارگذاری زمان‌بندی‌ها: {e}")
 
-    def run(self):
+    async def run(self):
         """اجرای ربات"""
         # ساخت Application
         self.application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -681,18 +681,33 @@ class InvestmentBot:
 
         # اجرای ربات
         logger.info("ربات در حال اجرا است...")
-        self.application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+        # Initialize and start the application
+        await self.application.initialize()
+        await self.application.start()
+        await self.application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+
+        # Keep the bot running
+        try:
+            # Wait until the application is stopped
+            await asyncio.Event().wait()
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("توقف ربات...")
+        finally:
+            await self.application.updater.stop()
+            await self.application.stop()
+            await self.application.shutdown()
 
 
-def main():
+async def main():
     """تابع اصلی"""
     if not TELEGRAM_BOT_TOKEN:
         logger.error("توکن تلگرام یافت نشد! لطفاً فایل .env را تنظیم کنید.")
         return
 
     bot = InvestmentBot()
-    bot.run()
+    await bot.run()
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
