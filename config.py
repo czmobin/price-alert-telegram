@@ -56,6 +56,47 @@ CRYPTO_SYMBOLS = {
 # منابع قیمت دیگر
 OTHER_ASSETS = ['gold', 'silver', 'usd_irr']
 
+# ارزهای فیات (از bonbast)
+FIAT_CURRENCIES = {
+    'usd': {'name': 'دلار آمریکا', 'symbol': '💵', 'flag': '🇺🇸'},
+    'eur': {'name': 'یورو', 'symbol': '💶', 'flag': '🇪🇺'},
+    'gbp': {'name': 'پوند انگلیس', 'symbol': '💷', 'flag': '🇬🇧'},
+    'chf': {'name': 'فرانک سوئیس', 'symbol': 'CHF', 'flag': '🇨🇭'},
+    'cad': {'name': 'دلار کانادا', 'symbol': 'CAD', 'flag': '🇨🇦'},
+    'aud': {'name': 'دلار استرالیا', 'symbol': 'AUD', 'flag': '🇦🇺'},
+    'jpy': {'name': 'ین ژاپن', 'symbol': 'JPY', 'flag': '🇯🇵'},
+    'cny': {'name': 'یوان چین', 'symbol': 'CNY', 'flag': '🇨🇳'},
+    'try': {'name': 'لیر ترکیه', 'symbol': 'TRY', 'flag': '🇹🇷'},
+    'rub': {'name': 'روبل روسیه', 'symbol': 'RUB', 'flag': '🇷🇺'},
+    'aed': {'name': 'درهم امارات', 'symbol': 'AED', 'flag': '🇦🇪'},
+    'kwd': {'name': 'دینار کویت', 'symbol': 'KWD', 'flag': '🇰🇼'},
+}
+
+# ارزهای فیات پیش‌فرض
+DEFAULT_FIAT_CURRENCIES = ['usd', 'eur', 'gbp']
+
+# سکه‌های طلا (از bonbast)
+GOLD_COINS = {
+    'azadi1': {'name': 'سکه بهار آزادی', 'symbol': '🪙'},
+    'azadi1_2': {'name': 'نیم سکه', 'symbol': '🪙'},
+    'azadi1_4': {'name': 'ربع سکه', 'symbol': '🪙'},
+    'azadi1g': {'name': 'یک گرمی', 'symbol': '🪙'},
+    'emami1': {'name': 'سکه امامی', 'symbol': '🪙'}
+}
+
+# آیتم‌های طلا (از bonbast)
+GOLD_ITEMS = {
+    'gol18': {'name': 'طلای ۱۸ عیار (گرم)', 'symbol': '✨'},
+    'mithqal': {'name': 'مثقال طلا', 'symbol': '⚖️'},
+    'ounce': {'name': 'اونس طلا', 'symbol': '🥇'}
+}
+
+# سکه‌های پیش‌فرض
+DEFAULT_COINS = ['azadi1', 'azadi1_2']
+
+# طلاهای پیش‌فرض
+DEFAULT_GOLD_ITEMS = ['gol18']
+
 # تنظیمات زمانی
 DEFAULT_NOTIFICATION_TIME = '09:00'
 TIMEZONE = 'Asia/Tehran'

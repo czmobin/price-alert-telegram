@@ -23,7 +23,8 @@ import pytz
 
 from config import (
     TELEGRAM_BOT_TOKEN, CHANNEL_ID, TIMEZONE, CRYPTO_SYMBOLS,
-    DEFAULT_CRYPTOS, TOP_5_CRYPTOS, TOP_10_CRYPTOS, PRESET_TIMES
+    DEFAULT_CRYPTOS, TOP_5_CRYPTOS, TOP_10_CRYPTOS, PRESET_TIMES,
+    FIAT_CURRENCIES, GOLD_COINS, GOLD_ITEMS
 )
 from database import Database
 from price_fetcher import PriceFetcher
@@ -170,18 +171,27 @@ class ArzalanBot:
                 include_gold = True
                 include_silver = True
                 include_usd = True
+                fiat_currency_ids = []
+                gold_coin_ids = []
+                gold_item_ids = []
             else:
                 crypto_ids = settings['selected_cryptos']
                 include_gold = bool(settings['include_gold'])
                 include_silver = bool(settings['include_silver'])
                 include_usd = bool(settings['include_usd'])
+                fiat_currency_ids = settings.get('selected_fiat_currencies', [])
+                gold_coin_ids = settings.get('selected_gold_coins', [])
+                gold_item_ids = settings.get('selected_gold_items', [])
 
             # دریافت قیمت‌ها
             prices = price_fetcher.get_all_prices(
                 crypto_ids=crypto_ids,
                 include_gold=include_gold,
                 include_silver=include_silver,
-                include_usd=include_usd
+                include_usd=include_usd,
+                fiat_currency_ids=fiat_currency_ids,
+                gold_coin_ids=gold_coin_ids,
+                gold_item_ids=gold_item_ids
             )
 
             # فرمت کردن پیام
@@ -221,18 +231,27 @@ class ArzalanBot:
                 include_gold = True
                 include_silver = True
                 include_usd = True
+                fiat_currency_ids = []
+                gold_coin_ids = []
+                gold_item_ids = []
             else:
                 crypto_ids = settings['selected_cryptos']
                 include_gold = bool(settings['include_gold'])
                 include_silver = bool(settings['include_silver'])
                 include_usd = bool(settings['include_usd'])
+                fiat_currency_ids = settings.get('selected_fiat_currencies', [])
+                gold_coin_ids = settings.get('selected_gold_coins', [])
+                gold_item_ids = settings.get('selected_gold_items', [])
 
             # دریافت قیمت‌ها
             prices = price_fetcher.get_all_prices(
                 crypto_ids=crypto_ids,
                 include_gold=include_gold,
                 include_silver=include_silver,
-                include_usd=include_usd
+                include_usd=include_usd,
+                fiat_currency_ids=fiat_currency_ids,
+                gold_coin_ids=gold_coin_ids,
+                gold_item_ids=gold_item_ids
             )
 
             # فرمت کردن پیام
@@ -325,6 +344,8 @@ class ArzalanBot:
             [InlineKeyboardButton("🥇 طلا و نقره", callback_data='asset_type_gold_silver')],
             [InlineKeyboardButton("💵 دلار", callback_data='asset_type_usd')],
             [InlineKeyboardButton("💱 ارزهای فیات", callback_data='asset_type_fiat')],
+            [InlineKeyboardButton("🪙 سکه‌های طلا", callback_data='asset_type_gold_coins')],
+            [InlineKeyboardButton("✨ طلا (گرمی، مثقال، اونس)", callback_data='asset_type_gold_items')],
             [InlineKeyboardButton("📊 بورس ایران (به زودی)", callback_data='asset_type_stock')],
             [InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_main')]
         ]
@@ -523,9 +544,96 @@ class ArzalanBot:
         await query.edit_message_text(message, reply_markup=reply_markup)
 
     async def asset_type_fiat_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """callback برای ارزهای فیات (به زودی)"""
+        """callback برای انتخاب ارزهای فیات"""
         query = update.callback_query
-        await query.answer("این قابلیت به زودی اضافه می‌شود", show_alert=True)
+        await query.answer()
+
+        user_id = update.effective_user.id
+        settings = db.get_user_settings(user_id)
+
+        current_fiats = settings.get('selected_fiat_currencies', []) if settings else []
+
+        message = """💱 لیست ارزهای فیات:
+
+روی هر ارز کلیک کنید تا انتخاب/لغو شود."""
+
+        # ساخت دکمه‌های ارزهای فیات
+        keyboard = []
+        available_fiats = list(FIAT_CURRENCIES.keys())
+
+        for i in range(0, len(available_fiats), 2):
+            row = []
+            for j in range(2):
+                if i + j < len(available_fiats):
+                    fiat_id = available_fiats[i + j]
+                    fiat_info = FIAT_CURRENCIES[fiat_id]
+                    is_selected = fiat_id in current_fiats
+                    button_text = f"{'☑️' if is_selected else '⬜️'} {fiat_info['flag']} {fiat_info['symbol']}"
+                    row.append(InlineKeyboardButton(button_text, callback_data=f'toggle_fiat_{fiat_id}'))
+            keyboard.append(row)
+
+        keyboard.append([InlineKeyboardButton("✔️ تأیید و ادامه", callback_data='select_assets_main')])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def asset_type_gold_coins_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای انتخاب سکه‌های طلا"""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = update.effective_user.id
+        settings = db.get_user_settings(user_id)
+
+        current_coins = settings.get('selected_gold_coins', []) if settings else []
+
+        message = """🪙 لیست سکه‌های طلا:
+
+روی هر سکه کلیک کنید تا انتخاب/لغو شود."""
+
+        # ساخت دکمه‌های سکه‌های طلا
+        keyboard = []
+        available_coins = list(GOLD_COINS.keys())
+
+        for coin_id in available_coins:
+            coin_info = GOLD_COINS[coin_id]
+            is_selected = coin_id in current_coins
+            button_text = f"{'☑️' if is_selected else '⬜️'} {coin_info['name']}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f'toggle_coin_{coin_id}')])
+
+        keyboard.append([InlineKeyboardButton("✔️ تأیید و ادامه", callback_data='select_assets_main')])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def asset_type_gold_items_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای انتخاب آیتم‌های طلا"""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = update.effective_user.id
+        settings = db.get_user_settings(user_id)
+
+        current_items = settings.get('selected_gold_items', []) if settings else []
+
+        message = """✨ لیست آیتم‌های طلا:
+
+روی هر آیتم کلیک کنید تا انتخاب/لغو شود."""
+
+        # ساخت دکمه‌های آیتم‌های طلا
+        keyboard = []
+        available_items = list(GOLD_ITEMS.keys())
+
+        for item_id in available_items:
+            item_info = GOLD_ITEMS[item_id]
+            is_selected = item_id in current_items
+            button_text = f"{'☑️' if is_selected else '⬜️'} {item_info['name']}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f'toggle_gold_item_{item_id}')])
+
+        keyboard.append([InlineKeyboardButton("✔️ تأیید و ادامه", callback_data='select_assets_main')])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
 
     async def asset_type_stock_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای بورس ایران (به زودی)"""
@@ -557,6 +665,78 @@ class ArzalanBot:
             await self.asset_type_gold_silver_callback(update, context)
         elif asset_type == 'usd':
             await self.asset_type_usd_callback(update, context)
+
+    async def toggle_fiat_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای تغییر وضعیت ارز فیات"""
+        query = update.callback_query
+        fiat_id = query.data.split('_', 2)[2]
+
+        user_id = update.effective_user.id
+        settings = db.get_user_settings(user_id)
+
+        current_fiats = settings.get('selected_fiat_currencies', []) if settings else []
+
+        # toggle کردن ارز فیات
+        if fiat_id in current_fiats:
+            current_fiats.remove(fiat_id)
+        else:
+            current_fiats.append(fiat_id)
+
+        # ذخیره در دیتابیس
+        db.update_selected_fiat_currencies(user_id, current_fiats)
+
+        await query.answer("✅ تغییرات ذخیره شد")
+
+        # به‌روزرسانی پیام
+        await self.asset_type_fiat_callback(update, context)
+
+    async def toggle_coin_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای تغییر وضعیت سکه طلا"""
+        query = update.callback_query
+        coin_id = query.data.split('_', 2)[2]
+
+        user_id = update.effective_user.id
+        settings = db.get_user_settings(user_id)
+
+        current_coins = settings.get('selected_gold_coins', []) if settings else []
+
+        # toggle کردن سکه
+        if coin_id in current_coins:
+            current_coins.remove(coin_id)
+        else:
+            current_coins.append(coin_id)
+
+        # ذخیره در دیتابیس
+        db.update_selected_gold_coins(user_id, current_coins)
+
+        await query.answer("✅ تغییرات ذخیره شد")
+
+        # به‌روزرسانی پیام
+        await self.asset_type_gold_coins_callback(update, context)
+
+    async def toggle_gold_item_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای تغییر وضعیت آیتم طلا"""
+        query = update.callback_query
+        item_id = query.data.split('_', 3)[3]
+
+        user_id = update.effective_user.id
+        settings = db.get_user_settings(user_id)
+
+        current_items = settings.get('selected_gold_items', []) if settings else []
+
+        # toggle کردن آیتم
+        if item_id in current_items:
+            current_items.remove(item_id)
+        else:
+            current_items.append(item_id)
+
+        # ذخیره در دیتابیس
+        db.update_selected_gold_items(user_id, current_items)
+
+        await query.answer("✅ تغییرات ذخیره شد")
+
+        # به‌روزرسانی پیام
+        await self.asset_type_gold_items_callback(update, context)
 
     async def setup_schedule_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای تنظیم زمان‌بندی"""
@@ -817,18 +997,27 @@ class ArzalanBot:
                 include_gold = True
                 include_silver = True
                 include_usd = True
+                fiat_currency_ids = []
+                gold_coin_ids = []
+                gold_item_ids = []
             else:
                 crypto_ids = settings['selected_cryptos']
                 include_gold = bool(settings['include_gold'])
                 include_silver = bool(settings['include_silver'])
                 include_usd = bool(settings['include_usd'])
+                fiat_currency_ids = settings.get('selected_fiat_currencies', [])
+                gold_coin_ids = settings.get('selected_gold_coins', [])
+                gold_item_ids = settings.get('selected_gold_items', [])
 
             # دریافت قیمت‌ها
             prices = price_fetcher.get_all_prices(
                 crypto_ids=crypto_ids,
                 include_gold=include_gold,
                 include_silver=include_silver,
-                include_usd=include_usd
+                include_usd=include_usd,
+                fiat_currency_ids=fiat_currency_ids,
+                gold_coin_ids=gold_coin_ids,
+                gold_item_ids=gold_item_ids
             )
 
             # فرمت کردن پیام
@@ -903,13 +1092,19 @@ class ArzalanBot:
             include_gold = bool(settings['include_gold'])
             include_silver = bool(settings['include_silver'])
             include_usd = bool(settings['include_usd'])
+            fiat_currency_ids = settings.get('selected_fiat_currencies', [])
+            gold_coin_ids = settings.get('selected_gold_coins', [])
+            gold_item_ids = settings.get('selected_gold_items', [])
 
             # دریافت قیمت‌ها
             prices = price_fetcher.get_all_prices(
                 crypto_ids=crypto_ids,
                 include_gold=include_gold,
                 include_silver=include_silver,
-                include_usd=include_usd
+                include_usd=include_usd,
+                fiat_currency_ids=fiat_currency_ids,
+                gold_coin_ids=gold_coin_ids,
+                gold_item_ids=gold_item_ids
             )
 
             # فرمت کردن پیام
@@ -1009,10 +1204,25 @@ class ArzalanBot:
             self.asset_type_fiat_callback, pattern='^asset_type_fiat$'
         ))
         self.application.add_handler(CallbackQueryHandler(
+            self.asset_type_gold_coins_callback, pattern='^asset_type_gold_coins$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.asset_type_gold_items_callback, pattern='^asset_type_gold_items$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
             self.asset_type_stock_callback, pattern='^asset_type_stock$'
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.toggle_asset_callback, pattern='^toggle_asset_'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.toggle_fiat_callback, pattern='^toggle_fiat_'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.toggle_coin_callback, pattern='^toggle_coin_'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.toggle_gold_item_callback, pattern='^toggle_gold_item_'
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.setup_schedule_callback, pattern='^setup_schedule$'
