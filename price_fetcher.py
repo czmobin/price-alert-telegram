@@ -186,17 +186,39 @@ class PriceFetcher:
 
             if response.status_code == 200:
                 data = response.json()
+
+                # چک کردن فرمت داده (ممکنه dict یا list باشه)
                 if isinstance(data, dict) and 'data' in data:
                     price_data = data['data']
-                    current_price = float(price_data.get('p', 0)) / 10  # تبدیل به تومان
+                    if isinstance(price_data, dict):
+                        current_price = float(price_data.get('p', 0)) / 10  # تبدیل به تومان
+                    elif isinstance(price_data, list) and len(price_data) > 0:
+                        # اگر لیست بود، اولین آیتم رو بگیر
+                        current_price = float(price_data[0].get('p', 0)) / 10 if isinstance(price_data[0], dict) else 0
+                    else:
+                        current_price = 0
 
-                    return {
-                        'price': current_price,
-                        'change_24h': 0,  # این API تغییرات را ندارد
-                        'change_7d': 0,
-                        'unit': 'تومان',
-                        'symbol': '💵'
-                    }
+                    if current_price > 0:
+                        return {
+                            'price': current_price,
+                            'change_24h': 0,  # این API تغییرات را ندارد
+                            'change_7d': 0,
+                            'unit': 'تومان',
+                            'symbol': '💵'
+                        }
+                elif isinstance(data, list) and len(data) > 0:
+                    # اگر مستقیم لیست بود
+                    price_data = data[0] if isinstance(data[0], dict) else {}
+                    current_price = float(price_data.get('p', 0)) / 10 if price_data else 0
+
+                    if current_price > 0:
+                        return {
+                            'price': current_price,
+                            'change_24h': 0,
+                            'change_7d': 0,
+                            'unit': 'تومان',
+                            'symbol': '💵'
+                        }
 
             # روش جایگزین: استفاده از API bonbast (غیررسمی)
             return self._get_usd_from_bonbast()
@@ -213,20 +235,91 @@ class PriceFetcher:
 
             if response.status_code == 200:
                 data = response.json()
-                usd_sell = float(data.get('usd', {}).get('sell', 0)) / 10
 
-                return {
-                    'price': usd_sell,
-                    'change_24h': 0,
-                    'change_7d': 0,
-                    'unit': 'تومان',
-                    'symbol': '💵'
-                }
-            return None
+                # چک کردن فرمت داده
+                if isinstance(data, dict):
+                    usd_data = data.get('usd', {})
+                    if isinstance(usd_data, dict):
+                        usd_sell = float(usd_data.get('sell', 0)) / 10
+                    else:
+                        # اگر usd به جای dict یک مقدار دیگه بود
+                        usd_sell = float(usd_data) / 10 if usd_data else 0
+                else:
+                    return None
+
+                if usd_sell > 0:
+                    return {
+                        'price': usd_sell,
+                        'change_24h': 0,
+                        'change_7d': 0,
+                        'unit': 'تومان',
+                        'symbol': '💵'
+                    }
+
+            # API بک‌آپ دوم: tgju.org
+            return self._get_usd_from_tgju()
 
         except Exception as e:
             print(f"خطا در دریافت دلار از Bonbast: {e}")
-            return None
+            return self._get_usd_from_tgju()
+
+    def _get_usd_from_tgju(self) -> Optional[Dict]:
+        """دریافت قیمت دلار از tgju (روش بک‌آپ دوم)"""
+        try:
+            # استفاده از API عمومی tgju
+            url = "https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl"
+            response = self.session.get(url, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                # استخراج قیمت از فرمت‌های مختلف
+                price = None
+
+                if isinstance(data, dict):
+                    if 'data' in data:
+                        price_data = data['data']
+                        if isinstance(price_data, dict):
+                            price = price_data.get('p')
+                        elif isinstance(price_data, list) and len(price_data) > 0:
+                            price = price_data[0].get('p') if isinstance(price_data[0], dict) else None
+                    elif 'p' in data:
+                        price = data.get('p')
+                elif isinstance(data, list) and len(data) > 0:
+                    if isinstance(data[0], dict):
+                        price = data[0].get('p')
+
+                if price:
+                    current_price = float(price) / 10  # تبدیل به تومان
+                    if current_price > 0:
+                        return {
+                            'price': current_price,
+                            'change_24h': 0,
+                            'change_7d': 0,
+                            'unit': 'تومان',
+                            'symbol': '💵'
+                        }
+
+            # اگر همه API ها فیل شدند، یک قیمت ثابت موقت برگردون
+            print("تمام API های دلار فیل شدند، استفاده از قیمت تخمینی")
+            return {
+                'price': 700000,  # قیمت تخمینی
+                'change_24h': 0,
+                'change_7d': 0,
+                'unit': 'تومان (تخمینی)',
+                'symbol': '💵'
+            }
+
+        except Exception as e:
+            print(f"خطا در دریافت دلار از tgju: {e}")
+            # قیمت پیش‌فرض در صورت خطا
+            return {
+                'price': 700000,
+                'change_24h': 0,
+                'change_7d': 0,
+                'unit': 'تومان (تخمینی)',
+                'symbol': '💵'
+            }
 
     def get_all_prices(self, crypto_ids: List[str], include_gold: bool = True,
                       include_silver: bool = True, include_usd: bool = True) -> Dict:
