@@ -110,12 +110,147 @@ class BonbastScraper:
     async def get_rates(self):
         """گرفتن نرخ ارز"""
         param, cookies = await self.capture_param_and_cookies()
-        
+
         if not param or not cookies:
             print("❌ نتونستم param/cookies رو بگیرم!")
             return None
-        
+
         return self.fetch_rates(param, cookies)
+
+    def extract_currency_data(self, rates: dict) -> dict:
+        """
+        استخراج و دسته‌بندی داده‌های bonbast
+
+        Returns:
+            dict: {
+                'currencies': {...},  # ارزهای فیات
+                'coins': {...},       # سکه‌ها
+                'gold': {...},        # طلا
+                'crypto': {...},      # ارزهای دیجیتال
+                'market': {...}       # بازار بورس و...
+            }
+        """
+        if not rates:
+            return None
+
+        result = {
+            'currencies': {},
+            'coins': {},
+            'gold': {},
+            'crypto': {},
+            'market': {},
+            'timestamp': rates.get('created', '')
+        }
+
+        # ارزهای فیات - نرخ خرید (1) و فروش (2)
+        fiat_currencies = {
+            'usd': 'دلار آمریکا',
+            'eur': 'یورو',
+            'gbp': 'پوند انگلیس',
+            'chf': 'فرانک سوئیس',
+            'cad': 'دلار کانادا',
+            'aud': 'دلار استرالیا',
+            'sek': 'کرون سوئد',
+            'nok': 'کرون نروژ',
+            'dkk': 'کرون دانمارک',
+            'jpy': 'ین ژاپن',
+            'cny': 'یوان چین',
+            'try': 'لیر ترکیه',
+            'rub': 'روبل روسیه',
+            'inr': 'روپیه هند',
+            'aed': 'درهم امارات',
+            'sar': 'ریال عربستان',
+            'qar': 'ریال قطر',
+            'kwd': 'دینار کویت',
+            'omr': 'ریال عمان',
+            'bhd': 'دینار بحرین',
+            'iqd': 'دینار عراق',
+            'myr': 'رینگیت مالزی',
+            'sgd': 'دلار سنگاپور',
+            'hkd': 'دلار هنگ کنگ',
+            'azn': 'منات آذربایجان',
+            'amd': 'درام ارمنستان',
+            'afn': 'افغانی افغانستان',
+            'thb': 'بات تایلند'
+        }
+
+        for currency, name in fiat_currencies.items():
+            buy_key = f'{currency}1'
+            sell_key = f'{currency}2'
+            if buy_key in rates and sell_key in rates:
+                try:
+                    result['currencies'][currency] = {
+                        'name': name,
+                        'buy': int(rates[buy_key]),
+                        'sell': int(rates[sell_key]),
+                        'symbol': currency.upper()
+                    }
+                except (ValueError, TypeError):
+                    continue
+
+        # سکه‌های طلا
+        coins_map = {
+            'azadi1': {'name': 'سکه بهار آزادی', 'type': 'full'},
+            'azadi1_2': {'name': 'نیم سکه', 'type': 'half'},
+            'azadi1_4': {'name': 'ربع سکه', 'type': 'quarter'},
+            'azadi1g': {'name': 'یک گرمی', 'type': 'gram'},
+            'emami1': {'name': 'سکه امامی', 'type': 'emami'}
+        }
+
+        for coin_key, coin_info in coins_map.items():
+            buy_key = coin_key
+            sell_key = f'{coin_key}2'
+            if buy_key in rates and sell_key in rates:
+                try:
+                    result['coins'][coin_key] = {
+                        'name': coin_info['name'],
+                        'type': coin_info['type'],
+                        'buy': int(rates[buy_key]),
+                        'sell': int(rates[sell_key])
+                    }
+                except (ValueError, TypeError):
+                    continue
+
+        # طلا
+        gold_items = {
+            'gol18': {'name': 'طلای ۱۸ عیار (گرم)', 'unit': 'تومان'},
+            'mithqal': {'name': 'مثقال طلا', 'unit': 'تومان'},
+            'ounce': {'name': 'اونس طلا', 'unit': 'دلار'}
+        }
+
+        for gold_key, gold_info in gold_items.items():
+            if gold_key in rates:
+                try:
+                    result['gold'][gold_key] = {
+                        'name': gold_info['name'],
+                        'price': float(rates[gold_key]),
+                        'unit': gold_info['unit']
+                    }
+                except (ValueError, TypeError):
+                    continue
+
+        # ارزهای دیجیتال
+        if 'bitcoin' in rates:
+            try:
+                result['crypto']['bitcoin'] = {
+                    'name': 'بیت کوین',
+                    'price': float(rates['bitcoin']),
+                    'symbol': 'BTC'
+                }
+            except (ValueError, TypeError):
+                pass
+
+        # بازار
+        if 'bourse' in rates:
+            try:
+                result['market']['bourse'] = {
+                    'name': 'شاخص بورس',
+                    'value': float(rates['bourse'])
+                }
+            except (ValueError, TypeError):
+                pass
+
+        return result
 
 async def main():
     scraper = BonbastScraper()

@@ -2,9 +2,14 @@
 دریافت قیمت‌های ارزهای دیجیتال، طلا، نقره و دلار
 """
 import requests
+import asyncio
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
-from config import COINGECKO_API, CRYPTO_SYMBOLS
+from config import (
+    COINGECKO_API, CRYPTO_SYMBOLS, FIAT_CURRENCIES,
+    GOLD_COINS, GOLD_ITEMS
+)
+from bonbast_monitor import BonbastScraper
 
 
 class PriceFetcher:
@@ -15,6 +20,9 @@ class PriceFetcher:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
+        self.bonbast_scraper = BonbastScraper()
+        self._bonbast_cache = None
+        self._bonbast_cache_time = None
 
     def format_number(self, number: float) -> str:
         """فرمت کردن اعداد به صورت خوانا"""
@@ -227,29 +235,58 @@ class PriceFetcher:
             print(f"خطا در دریافت قیمت دلار: {e}")
             return self._get_usd_from_bonbast()
 
+    async def _get_bonbast_data(self, use_cache: bool = True) -> Optional[Dict]:
+        """
+        دریافت داده‌های bonbast با cache
+
+        Args:
+            use_cache: استفاده از cache (5 دقیقه)
+        """
+        try:
+            # بررسی cache
+            if use_cache and self._bonbast_cache and self._bonbast_cache_time:
+                time_diff = (datetime.now() - self._bonbast_cache_time).total_seconds()
+                if time_diff < 300:  # 5 minutes
+                    return self._bonbast_cache
+
+            # دریافت داده‌های جدید
+            rates = await self.bonbast_scraper.get_rates()
+
+            if rates:
+                extracted_data = self.bonbast_scraper.extract_currency_data(rates)
+                self._bonbast_cache = extracted_data
+                self._bonbast_cache_time = datetime.now()
+                return extracted_data
+
+            return None
+
+        except Exception as e:
+            print(f"خطا در دریافت داده از Bonbast: {e}")
+            return None
+
+    def _get_bonbast_data_sync(self, use_cache: bool = True) -> Optional[Dict]:
+        """نسخه sync از تابع دریافت داده bonbast"""
+        try:
+            # اجرای async function در sync context
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(self._get_bonbast_data(use_cache))
+            loop.close()
+            return result
+        except Exception as e:
+            print(f"خطا در دریافت داده از Bonbast (sync): {e}")
+            return None
+
     def _get_usd_from_bonbast(self) -> Optional[Dict]:
         """دریافت قیمت دلار از Bonbast (روش جایگزین)"""
         try:
-            url = "https://www.bonbast.com/json"
-            response = self.session.get(url, timeout=10)
+            bonbast_data = self._get_bonbast_data_sync()
 
-            if response.status_code == 200:
-                data = response.json()
-
-                # چک کردن فرمت داده
-                if isinstance(data, dict):
-                    usd_data = data.get('usd', {})
-                    if isinstance(usd_data, dict):
-                        usd_sell = float(usd_data.get('sell', 0)) / 10
-                    else:
-                        # اگر usd به جای dict یک مقدار دیگه بود
-                        usd_sell = float(usd_data) / 10 if usd_data else 0
-                else:
-                    return None
-
-                if usd_sell > 0:
+            if bonbast_data and 'currencies' in bonbast_data:
+                usd_data = bonbast_data['currencies'].get('usd')
+                if usd_data:
                     return {
-                        'price': usd_sell,
+                        'price': usd_data['sell'],
                         'change_24h': 0,
                         'change_7d': 0,
                         'unit': 'تومان',
@@ -321,8 +358,103 @@ class PriceFetcher:
                 'symbol': '💵'
             }
 
-    def get_all_prices(self, crypto_ids: List[str], include_gold: bool = True,
-                      include_silver: bool = True, include_usd: bool = True) -> Dict:
+    def get_fiat_currencies(self, currency_ids: List[str]) -> Dict[str, Dict]:
+        """
+        دریافت قیمت ارزهای فیات از bonbast
+
+        Returns:
+            dict: {'usd': {'name': '...', 'buy': 112850, 'sell': 112750}, ...}
+        """
+        try:
+            bonbast_data = self._get_bonbast_data_sync()
+
+            if not bonbast_data or 'currencies' not in bonbast_data:
+                return {}
+
+            result = {}
+            for currency_id in currency_ids:
+                if currency_id in bonbast_data['currencies']:
+                    currency_data = bonbast_data['currencies'][currency_id]
+                    result[currency_id] = {
+                        'name': currency_data['name'],
+                        'buy': currency_data['buy'],
+                        'sell': currency_data['sell'],
+                        'symbol': FIAT_CURRENCIES.get(currency_id, {}).get('symbol', currency_id.upper())
+                    }
+
+            return result
+
+        except Exception as e:
+            print(f"خطا در دریافت ارزهای فیات: {e}")
+            return {}
+
+    def get_gold_coins(self, coin_ids: List[str]) -> Dict[str, Dict]:
+        """
+        دریافت قیمت سکه‌های طلا از bonbast
+
+        Returns:
+            dict: {'azadi1': {'name': '...', 'buy': 111600000, 'sell': 109800000}, ...}
+        """
+        try:
+            bonbast_data = self._get_bonbast_data_sync()
+
+            if not bonbast_data or 'coins' not in bonbast_data:
+                return {}
+
+            result = {}
+            for coin_id in coin_ids:
+                if coin_id in bonbast_data['coins']:
+                    coin_data = bonbast_data['coins'][coin_id]
+                    result[coin_id] = {
+                        'name': coin_data['name'],
+                        'buy': coin_data['buy'],
+                        'sell': coin_data['sell'],
+                        'symbol': GOLD_COINS.get(coin_id, {}).get('symbol', '🪙')
+                    }
+
+            return result
+
+        except Exception as e:
+            print(f"خطا در دریافت سکه‌های طلا: {e}")
+            return {}
+
+    def get_gold_items(self, item_ids: List[str]) -> Dict[str, Dict]:
+        """
+        دریافت قیمت آیتم‌های طلا از bonbast
+
+        Returns:
+            dict: {'gol18': {'name': '...', 'price': 11306847}, ...}
+        """
+        try:
+            bonbast_data = self._get_bonbast_data_sync()
+
+            if not bonbast_data or 'gold' not in bonbast_data:
+                return {}
+
+            result = {}
+            for item_id in item_ids:
+                if item_id in bonbast_data['gold']:
+                    gold_data = bonbast_data['gold'][item_id]
+                    result[item_id] = {
+                        'name': gold_data['name'],
+                        'price': gold_data['price'],
+                        'unit': gold_data['unit'],
+                        'symbol': GOLD_ITEMS.get(item_id, {}).get('symbol', '✨')
+                    }
+
+            return result
+
+        except Exception as e:
+            print(f"خطا در دریافت آیتم‌های طلا: {e}")
+            return {}
+
+    def get_all_prices(self, crypto_ids: List[str] = None,
+                      include_gold: bool = True,
+                      include_silver: bool = True,
+                      include_usd: bool = True,
+                      fiat_currency_ids: List[str] = None,
+                      gold_coin_ids: List[str] = None,
+                      gold_item_ids: List[str] = None) -> Dict:
         """
         دریافت تمام قیمت‌ها
 
@@ -331,7 +463,10 @@ class PriceFetcher:
                 'cryptos': {...},
                 'gold': {...},
                 'silver': {...},
-                'usd_irr': {...}
+                'usd_irr': {...},
+                'fiat_currencies': {...},
+                'gold_coins': {...},
+                'gold_items': {...}
             }
         """
         result = {
@@ -339,6 +474,9 @@ class PriceFetcher:
             'gold': None,
             'silver': None,
             'usd_irr': None,
+            'fiat_currencies': {},
+            'gold_coins': {},
+            'gold_items': {},
             'timestamp': datetime.now().isoformat()
         }
 
@@ -357,6 +495,18 @@ class PriceFetcher:
         # دریافت قیمت دلار
         if include_usd:
             result['usd_irr'] = self.get_usd_irr_price()
+
+        # دریافت ارزهای فیات
+        if fiat_currency_ids:
+            result['fiat_currencies'] = self.get_fiat_currencies(fiat_currency_ids)
+
+        # دریافت سکه‌های طلا
+        if gold_coin_ids:
+            result['gold_coins'] = self.get_gold_coins(gold_coin_ids)
+
+        # دریافت آیتم‌های طلا
+        if gold_item_ids:
+            result['gold_items'] = self.get_gold_items(gold_item_ids)
 
         return result
 
@@ -416,6 +566,53 @@ class PriceFetcher:
             lines.append(f"{usd['symbol']} دلار آمریکا:")
             lines.append(f"   قیمت: {self.format_number(usd['price'])} {usd['unit']}")
             lines.append("")
+
+        # ارزهای فیات
+        if prices.get('fiat_currencies'):
+            lines.append("💱 ارزهای فیات:")
+            lines.append("")
+
+            for currency_id, data in prices['fiat_currencies'].items():
+                symbol = data['symbol']
+                name = data['name']
+                buy = self.format_number(data['buy'])
+                sell = self.format_number(data['sell'])
+
+                lines.append(f"▫️ {symbol} {name}")
+                lines.append(f"   خرید: {buy} تومان")
+                lines.append(f"   فروش: {sell} تومان")
+                lines.append("")
+
+        # سکه‌های طلا
+        if prices.get('gold_coins'):
+            lines.append("🪙 سکه‌های طلا:")
+            lines.append("")
+
+            for coin_id, data in prices['gold_coins'].items():
+                symbol = data['symbol']
+                name = data['name']
+                buy = self.format_number(data['buy'])
+                sell = self.format_number(data['sell'])
+
+                lines.append(f"{symbol} {name}")
+                lines.append(f"   خرید: {buy} تومان")
+                lines.append(f"   فروش: {sell} تومان")
+                lines.append("")
+
+        # آیتم‌های طلا
+        if prices.get('gold_items'):
+            lines.append("✨ طلا:")
+            lines.append("")
+
+            for item_id, data in prices['gold_items'].items():
+                symbol = data['symbol']
+                name = data['name']
+                price = self.format_number(data['price'])
+                unit = data['unit']
+
+                lines.append(f"{symbol} {name}")
+                lines.append(f"   قیمت: {price} {unit}")
+                lines.append("")
 
         # زمان به‌روزرسانی
         lines.append("─" * 35)

@@ -5,7 +5,10 @@ import sqlite3
 import json
 from datetime import datetime
 from typing import List, Optional, Dict, Any
-from config import DATABASE_PATH, DEFAULT_CRYPTOS, DEFAULT_NOTIFICATION_TIME
+from config import (
+    DATABASE_PATH, DEFAULT_CRYPTOS, DEFAULT_NOTIFICATION_TIME,
+    DEFAULT_FIAT_CURRENCIES, DEFAULT_COINS, DEFAULT_GOLD_ITEMS
+)
 
 
 class Database:
@@ -52,6 +55,10 @@ class Database:
                 include_gold INTEGER DEFAULT 1,
                 include_silver INTEGER DEFAULT 1,
                 include_usd INTEGER DEFAULT 1,
+                selected_fiat_currencies TEXT,
+                selected_gold_coins TEXT,
+                selected_gold_items TEXT,
+                include_bourse INTEGER DEFAULT 0,
                 timezone TEXT DEFAULT 'Asia/Tehran',
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
@@ -94,9 +101,13 @@ class Database:
 
             # ایجاد تنظیمات پیش‌فرض برای کاربر جدید
             cursor.execute('''
-                INSERT OR IGNORE INTO user_settings (user_id, selected_cryptos)
-                VALUES (?, ?)
-            ''', (user_id, json.dumps(DEFAULT_CRYPTOS)))
+                INSERT OR IGNORE INTO user_settings (user_id, selected_cryptos,
+                    selected_fiat_currencies, selected_gold_coins, selected_gold_items)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (user_id, json.dumps(DEFAULT_CRYPTOS),
+                  json.dumps(DEFAULT_FIAT_CURRENCIES),
+                  json.dumps(DEFAULT_COINS),
+                  json.dumps(DEFAULT_GOLD_ITEMS)))
 
             conn.commit()
             conn.close()
@@ -155,7 +166,10 @@ class Database:
             if row:
                 settings = dict(row)
                 # تبدیل JSON به لیست
-                settings['selected_cryptos'] = json.loads(settings['selected_cryptos'])
+                settings['selected_cryptos'] = json.loads(settings['selected_cryptos']) if settings.get('selected_cryptos') else DEFAULT_CRYPTOS
+                settings['selected_fiat_currencies'] = json.loads(settings['selected_fiat_currencies']) if settings.get('selected_fiat_currencies') else DEFAULT_FIAT_CURRENCIES
+                settings['selected_gold_coins'] = json.loads(settings['selected_gold_coins']) if settings.get('selected_gold_coins') else DEFAULT_COINS
+                settings['selected_gold_items'] = json.loads(settings['selected_gold_items']) if settings.get('selected_gold_items') else DEFAULT_GOLD_ITEMS
                 return settings
             return None
         except Exception as e:
@@ -282,6 +296,63 @@ class Database:
             return True
         except Exception as e:
             print(f"خطا در ثبت پیام: {e}")
+            return False
+
+    def update_selected_fiat_currencies(self, user_id: int, currencies: List[str]) -> bool:
+        """به‌روزرسانی ارزهای فیات انتخابی کاربر"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                UPDATE user_settings
+                SET selected_fiat_currencies = ?
+                WHERE user_id = ?
+            ''', (json.dumps(currencies), user_id))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در به‌روزرسانی ارزهای فیات: {e}")
+            return False
+
+    def update_selected_gold_coins(self, user_id: int, coins: List[str]) -> bool:
+        """به‌روزرسانی سکه‌های طلا انتخابی کاربر"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                UPDATE user_settings
+                SET selected_gold_coins = ?
+                WHERE user_id = ?
+            ''', (json.dumps(coins), user_id))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در به‌روزرسانی سکه‌های طلا: {e}")
+            return False
+
+    def update_selected_gold_items(self, user_id: int, items: List[str]) -> bool:
+        """به‌روزرسانی آیتم‌های طلا انتخابی کاربر"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                UPDATE user_settings
+                SET selected_gold_items = ?
+                WHERE user_id = ?
+            ''', (json.dumps(items), user_id))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در به‌روزرسانی آیتم‌های طلا: {e}")
             return False
 
     def get_active_users_count(self) -> int:
