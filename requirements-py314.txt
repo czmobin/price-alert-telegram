@@ -1,0 +1,9 @@
+# نسخه‌های سازگار با Python 3.14+
+# برای نصب: pip install -r requirements-py314.txt
+
+# نصب مستقیم از GitHub (آخرین نسخه)
+git+https://github.com/python-telegram-bot/python-telegram-bot.git@master#egg=python-telegram-bot[job-queue]
+
+requests>=2.32.3
+python-dotenv>=1.0.1
+pytz>=2024.1
