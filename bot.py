@@ -1,5 +1,5 @@
 """
-ربات تلگرام اطلاع‌رسانی قیمت سرمایه‌گذاری
+ربات تلگرام دستیار ارزَلان - اطلاع‌رسانی قیمت ارزهای دیجیتال
 """
 import asyncio
 import logging
@@ -16,9 +16,13 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+from telegram.error import TelegramError
 import pytz
 
-from config import TELEGRAM_BOT_TOKEN, TIMEZONE, CRYPTO_SYMBOLS, DEFAULT_CRYPTOS
+from config import (
+    TELEGRAM_BOT_TOKEN, CHANNEL_ID, TIMEZONE, CRYPTO_SYMBOLS,
+    DEFAULT_CRYPTOS, TOP_5_CRYPTOS, TOP_10_CRYPTOS, PRESET_TIMES
+)
 from database import Database
 from price_fetcher import PriceFetcher
 
@@ -30,93 +34,126 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # وضعیت‌های مکالمه
-PHONE_NUMBER, SELECT_TIME, SELECT_CRYPTOS = range(3)
+WAITING_FOR_TIME = range(1)
 
 # نمونه‌های global
 db = Database()
 price_fetcher = PriceFetcher()
 
 
-class InvestmentBot:
-    """کلاس اصلی ربات"""
+class ArzalanBot:
+    """کلاس اصلی ربات دستیار ارزَلان"""
 
     def __init__(self):
         self.application = None
 
+    async def check_channel_membership(self, user_id: int) -> bool:
+        """چک کردن عضویت کاربر در کانال"""
+        try:
+            member = await self.application.bot.get_chat_member(CHANNEL_ID, user_id)
+            return member.status in ['member', 'administrator', 'creator']
+        except TelegramError as e:
+            logger.error(f"خطا در چک عضویت کانال: {e}")
+            return True  # در صورت خطا، اجازه ادامه بده
+
+    def get_main_menu_keyboard(self):
+        """منوی اصلی با دکمه‌های keyboard"""
+        keyboard = [
+            ['📤 ارسال قیمت الان'],
+            ['🕒 تنظیم زمان ارسال روزانه پیام', '🔔 اعلان تغییر قیمت'],
+            ['❓ راهنما', '⚙️ تنظیمات'],
+            ['👤 پشتیبانی']
+        ]
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """دستور /start"""
+        """دستور /start - پیام خوش‌آمد و چک عضویت"""
         user = update.effective_user
-        user_data = db.get_user(user.id)
+        user_id = user.id
 
         # ثبت یا به‌روزرسانی کاربر
         db.add_user(
-            user_id=user.id,
+            user_id=user_id,
             username=user.username,
             first_name=user.first_name,
             last_name=user.last_name,
             language_code=user.language_code
         )
 
-        welcome_message = f"""
-سلام {user.first_name} عزیز! 👋
+        # پیام خوش‌آمد
+        welcome_message = f"""📲 به دستیار ابزار ارز دیجیتال ارزَلان خوش اومدی!
 
-به ربات اطلاع‌رسانی قیمت سرمایه‌گذاری خوش آمدید.
+با دستیار ارزَلان میتونی:
+🔹 قیمت لحظه‌ای ارزهای دیجیتال، طلا، نقره و ارزهای فیات رو ببینی.
+🔹 قیمت لحظه‌ای دلار در ایران رو ببینی.
+🔹 در زمانبندی دلخواه خودت از قیمت ها باخبر بشی.
 
-این ربات می‌تواند:
-🔹 قیمت ارزهای دیجیتال را نمایش دهد
-🔹 قیمت طلا و نقره را نمایش دهد
-🔹 قیمت دلار را نمایش دهد
-🔹 تغییرات هفتگی را نمایش دهد
-🔹 در ساعت دلخواه شما پیام ارسال کند
+هر جا نیاز به کمک داشتی روی راهنما کلیک کن
+/help"""
 
-دستورات موجود:
-/price - دریافت قیمت‌های فعلی
-/settings - تنظیمات شخصی
-/schedule - تنظیم زمان‌بندی
-/cryptos - انتخاب ارزهای دیجیتال
-/help - راهنما
+        await update.message.reply_text(welcome_message)
 
-برای شروع، لطفاً شماره تماس خود را با من به اشتراک بگذارید.
-"""
+        # چک عضویت در کانال
+        is_member = await self.check_channel_membership(user_id)
 
-        # چک کردن اینکه آیا کاربر شماره تلفن داده یا نه
-        if not user_data or not user_data.get('phone_number'):
-            # دکمه درخواست شماره تلفن
-            contact_button = KeyboardButton("📱 اشتراک شماره تلفن", request_contact=True)
-            reply_markup = ReplyKeyboardMarkup(
-                [[contact_button]],
-                resize_keyboard=True,
-                one_time_keyboard=True
-            )
-            await update.message.reply_text(welcome_message, reply_markup=reply_markup)
-            return PHONE_NUMBER
+        if not is_member:
+            # پیام درخواست عضویت
+            membership_message = """برای استفاده از دستیار ارزَلان کافیه در کانال اصلی اون عضو بشی.
+خبری از تبلیغات نیست کانال خودمونه."""
+
+            keyboard = [
+                [InlineKeyboardButton("🔗 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")],
+                [InlineKeyboardButton("✅ عضو شدم", callback_data='check_membership')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(membership_message, reply_markup=reply_markup)
         else:
-            await update.message.reply_text(welcome_message)
-            return ConversationHandler.END
+            # نمایش منوی اصلی و ارسال لیست قیمت‌ها
+            await self.show_main_menu(update, context)
 
-    async def receive_phone_number(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """دریافت شماره تلفن کاربر"""
-        if update.message.contact:
-            phone_number = update.message.contact.phone_number
-            user_id = update.effective_user.id
+    async def check_membership_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای چک عضویت"""
+        query = update.callback_query
+        user_id = update.effective_user.id
 
-            # ذخیره شماره در دیتابیس
-            db.update_phone_number(user_id, phone_number)
+        is_member = await self.check_channel_membership(user_id)
 
-            await update.message.reply_text(
-                f"✅ شماره تلفن شما ({phone_number}) ثبت شد.\n\n"
-                "برای دریافت قیمت‌ها از دستور /price استفاده کنید.",
-                reply_markup=ReplyKeyboardMarkup([['📊 دریافت قیمت‌ها']], resize_keyboard=True)
-            )
-            return ConversationHandler.END
+        if is_member:
+            await query.answer("✅ عضویت شما تأیید شد!")
+            await query.edit_message_text("✅ عضویت شما تأیید شد! خوش اومدی به ارزَلان 🎉")
+
+            # ارسال منوی اصلی و قیمت‌ها
+            await self.show_main_menu_after_callback(query, context)
         else:
-            await update.message.reply_text(
-                "لطفاً از دکمه 'اشتراک شماره تلفن' استفاده کنید."
-            )
-            return PHONE_NUMBER
+            await query.answer("❌ برای ادامه باید عضو کانال باشی", show_alert=True)
 
-    async def price_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """دستور /price - نمایش قیمت‌ها"""
+    async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش منوی اصلی و ارسال قیمت‌ها"""
+        # نمایش منوی keyboard
+        await update.message.reply_text(
+            "منوی اصلی:",
+            reply_markup=self.get_main_menu_keyboard()
+        )
+
+        # ارسال قیمت‌ها
+        await self.send_prices(update, context, is_first_time=True)
+
+    async def show_main_menu_after_callback(self, query, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش منوی اصلی بعد از callback"""
+        user_id = query.from_user.id
+
+        # ارسال منوی keyboard
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="منوی اصلی:",
+            reply_markup=self.get_main_menu_keyboard()
+        )
+
+        # ارسال قیمت‌ها
+        await self.send_prices_to_user(user_id, context, is_first_time=True)
+
+    async def send_prices(self, update: Update, context: ContextTypes.DEFAULT_TYPE, is_first_time: bool = False):
+        """ارسال قیمت‌ها"""
         user_id = update.effective_user.id
 
         # ارسال پیام در حال پردازش
@@ -152,8 +189,8 @@ class InvestmentBot:
             keyboard = [
                 [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
                 [
-                    InlineKeyboardButton("⚙️ تنظیمات", callback_data='open_settings'),
-                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_cryptos')
+                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -170,6 +207,57 @@ class InvestmentBot:
             await processing_msg.edit_text(
                 "❌ متأسفانه در دریافت قیمت‌ها خطایی رخ داد. لطفاً دوباره تلاش کنید."
             )
+
+    async def send_prices_to_user(self, user_id: int, context: ContextTypes.DEFAULT_TYPE, is_first_time: bool = False):
+        """ارسال قیمت‌ها به کاربر (برای callback)"""
+        try:
+            # دریافت تنظیمات کاربر
+            settings = db.get_user_settings(user_id)
+
+            if not settings:
+                crypto_ids = DEFAULT_CRYPTOS
+                include_gold = True
+                include_silver = True
+                include_usd = True
+            else:
+                crypto_ids = settings['selected_cryptos']
+                include_gold = bool(settings['include_gold'])
+                include_silver = bool(settings['include_silver'])
+                include_usd = bool(settings['include_usd'])
+
+            # دریافت قیمت‌ها
+            prices = price_fetcher.get_all_prices(
+                crypto_ids=crypto_ids,
+                include_gold=include_gold,
+                include_silver=include_silver,
+                include_usd=include_usd
+            )
+
+            # فرمت کردن پیام
+            message = price_fetcher.format_price_message(prices)
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                [
+                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # ارسال پیام
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=message,
+                reply_markup=reply_markup
+            )
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'price_request')
+
+        except Exception as e:
+            logger.error(f"خطا در ارسال قیمت: {e}")
 
     async def refresh_prices_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای به‌روزرسانی قیمت‌ها"""
@@ -208,8 +296,8 @@ class InvestmentBot:
             keyboard = [
                 [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
                 [
-                    InlineKeyboardButton("⚙️ تنظیمات", callback_data='open_settings'),
-                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_cryptos')
+                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -223,52 +311,71 @@ class InvestmentBot:
                 "❌ متأسفانه در به‌روزرسانی قیمت‌ها خطایی رخ داد."
             )
 
-    async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """دستور /settings - تنظیمات"""
-        user_id = update.effective_user.id
-        settings = db.get_user_settings(user_id)
+    async def select_assets_main_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای انتخاب نوع دارایی"""
+        query = update.callback_query
+        await query.answer()
 
-        if not settings:
-            message = "شما هنوز تنظیماتی ندارید."
-            notification_status = "❌ غیرفعال"
-            notification_time = "تنظیم نشده"
-        else:
-            notification_status = "✅ فعال" if settings['notification_enabled'] else "❌ غیرفعال"
-            notification_time = settings['notification_time']
+        message = "چه نوع دارایی می‌خوای اضافه کنی؟"
 
-            message = f"""
-⚙️ تنظیمات شما:
-
-🔔 وضعیت اعلان: {notification_status}
-🕐 زمان ارسال: {notification_time}
-🪙 تعداد ارزها: {len(settings['selected_cryptos'])}
-🥇 طلا: {'✅' if settings['include_gold'] else '❌'}
-🥈 نقره: {'✅' if settings['include_silver'] else '❌'}
-💵 دلار: {'✅' if settings['include_usd'] else '❌'}
-"""
-
-        # دکمه‌های تنظیمات
         keyboard = [
-            [InlineKeyboardButton("⏰ تنظیم زمان‌بندی", callback_data='setup_schedule')],
-            [InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_cryptos')],
-            [InlineKeyboardButton("💰 انتخاب دارایی‌ها", callback_data='select_assets')],
+            [InlineKeyboardButton("💰 ارز دیجیتال (Cryptocurrency)", callback_data='asset_type_crypto')],
+            [InlineKeyboardButton("🥇 طلا و نقره", callback_data='asset_type_gold_silver')],
+            [InlineKeyboardButton("💵 دلار", callback_data='asset_type_usd')],
+            [InlineKeyboardButton("💱 ارزهای فیات", callback_data='asset_type_fiat')],
+            [InlineKeyboardButton("📊 بورس ایران (به زودی)", callback_data='asset_type_stock')],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_main')]
         ]
-
-        if settings and settings['notification_enabled']:
-            keyboard.append([InlineKeyboardButton("🔕 غیرفعال کردن اعلان", callback_data='disable_notification')])
-        else:
-            keyboard.append([InlineKeyboardButton("🔔 فعال کردن اعلان", callback_data='enable_notification')])
-
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # بررسی اینکه آیا از command آمده یا callback
-        if update.callback_query:
-            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
-        else:
-            await update.message.reply_text(message, reply_markup=reply_markup)
+        await query.edit_message_text(message, reply_markup=reply_markup)
 
-    async def select_cryptos_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def asset_type_crypto_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای انتخاب ارزهای دیجیتال"""
+        query = update.callback_query
+        await query.answer()
+
+        message = """ارزهای خود را به صورت دستی یا با انتخاب گزینه های زیر انتخاب کنید."""
+
+        keyboard = [
+            [InlineKeyboardButton("⭐️ ۵ ارز برتر بازار", callback_data='crypto_top5')],
+            [InlineKeyboardButton("🔟 ارزهای منتخب بازار", callback_data='crypto_top10')],
+            [InlineKeyboardButton("✍️ انتخاب دستی", callback_data='crypto_manual')],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data='select_assets_main')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def crypto_top5_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای انتخاب 5 ارز برتر"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # ذخیره 5 ارز برتر
+        db.update_selected_cryptos(user_id, TOP_5_CRYPTOS)
+
+        await query.answer("✅ 5 ارز برتر بازار انتخاب شد")
+
+        # نمایش لیست با تیک
+        message = """✅ 5 ارز برتر بازار انتخاب شد:
+
+☑️ BTC
+☑️ ETH
+☑️ USDT
+☑️ BNB
+☑️ SOL"""
+
+        keyboard = [
+            [InlineKeyboardButton("✍️ ویرایش دستی", callback_data='crypto_manual')],
+            [InlineKeyboardButton("✔️ تأیید و ادامه", callback_data='select_assets_main')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def crypto_top10_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای نمایش ارزهای منتخب بازار (10 ارز)"""
         query = update.callback_query
         await query.answer()
 
@@ -277,14 +384,39 @@ class InvestmentBot:
 
         current_cryptos = settings['selected_cryptos'] if settings else DEFAULT_CRYPTOS
 
-        message = """
-📋 انتخاب ارزهای دیجیتال:
+        message = """ارز مورد نظرت رو با نام اون بنویس یا از لیست زیر انتخاب کن.
 
-لیست ارزهای فعال شما را مشخص کنید.
-روی هر ارز کلیک کنید تا فعال/غیرفعال شود.
-"""
+ارزهای منتخب بازار:"""
 
         # ساخت دکمه‌های ارزها
+        keyboard = []
+
+        for crypto in TOP_10_CRYPTOS:
+            symbol = CRYPTO_SYMBOLS.get(crypto, crypto.upper())
+            is_selected = crypto in current_cryptos
+            button_text = f"{'☑️' if is_selected else '⬜️'} {symbol}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f'toggle_crypto_{crypto}')])
+
+        keyboard.append([InlineKeyboardButton("✔️ تأیید و ادامه", callback_data='select_assets_main')])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def crypto_manual_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای انتخاب دستی ارزها"""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = update.effective_user.id
+        settings = db.get_user_settings(user_id)
+
+        current_cryptos = settings['selected_cryptos'] if settings else DEFAULT_CRYPTOS
+
+        message = """لیست کامل ارزهای دیجیتال:
+
+روی هر ارز کلیک کنید تا انتخاب/لغو شود."""
+
+        # ساخت دکمه‌های تمام ارزها
         keyboard = []
         available_cryptos = list(CRYPTO_SYMBOLS.keys())
 
@@ -295,11 +427,11 @@ class InvestmentBot:
                     crypto = available_cryptos[i + j]
                     symbol = CRYPTO_SYMBOLS[crypto]
                     is_selected = crypto in current_cryptos
-                    button_text = f"{'✅' if is_selected else '⬜️'} {symbol}"
+                    button_text = f"{'☑️' if is_selected else '⬜️'} {symbol}"
                     row.append(InlineKeyboardButton(button_text, callback_data=f'toggle_crypto_{crypto}'))
             keyboard.append(row)
 
-        keyboard.append([InlineKeyboardButton("✔️ تأیید و بازگشت", callback_data='back_to_settings')])
+        keyboard.append([InlineKeyboardButton("✔️ تأیید و ادامه", callback_data='select_assets_main')])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(message, reply_markup=reply_markup)
@@ -330,11 +462,15 @@ class InvestmentBot:
 
         await query.answer("✅ تغییرات ذخیره شد")
 
-        # به‌روزرسانی پیام
-        await self.select_cryptos_callback(update, context)
+        # به‌روزرسانی پیام (بازگشت به همان صفحه)
+        # چک کنیم کاربر در کدام لیست بود
+        if crypto_id in TOP_10_CRYPTOS:
+            await self.crypto_top10_callback(update, context)
+        else:
+            await self.crypto_manual_callback(update, context)
 
-    async def select_assets_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """callback برای انتخاب دارایی‌های دیگر"""
+    async def asset_type_gold_silver_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای انتخاب طلا و نقره"""
         query = update.callback_query
         await query.answer()
 
@@ -343,28 +479,56 @@ class InvestmentBot:
 
         include_gold = bool(settings['include_gold']) if settings else True
         include_silver = bool(settings['include_silver']) if settings else True
-        include_usd = bool(settings['include_usd']) if settings else True
 
-        message = "💰 انتخاب دارایی‌های دیگر:"
+        message = "انتخاب طلا و نقره:"
 
         keyboard = [
             [InlineKeyboardButton(
-                f"{'✅' if include_gold else '⬜️'} 🥇 طلا",
+                f"{'☑️' if include_gold else '⬜️'} 🥇 طلا",
                 callback_data='toggle_asset_gold'
             )],
             [InlineKeyboardButton(
-                f"{'✅' if include_silver else '⬜️'} 🥈 نقره",
+                f"{'☑️' if include_silver else '⬜️'} 🥈 نقره",
                 callback_data='toggle_asset_silver'
             )],
-            [InlineKeyboardButton(
-                f"{'✅' if include_usd else '⬜️'} 💵 دلار",
-                callback_data='toggle_asset_usd'
-            )],
-            [InlineKeyboardButton("✔️ تأیید و بازگشت", callback_data='back_to_settings')]
+            [InlineKeyboardButton("✔️ تأیید و بازگشت", callback_data='select_assets_main')]
         ]
 
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def asset_type_usd_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای انتخاب دلار"""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = update.effective_user.id
+        settings = db.get_user_settings(user_id)
+
+        include_usd = bool(settings['include_usd']) if settings else True
+
+        message = "انتخاب دلار:"
+
+        keyboard = [
+            [InlineKeyboardButton(
+                f"{'☑️' if include_usd else '⬜️'} 💵 دلار آمریکا",
+                callback_data='toggle_asset_usd'
+            )],
+            [InlineKeyboardButton("✔️ تأیید و بازگشت", callback_data='select_assets_main')]
+        ]
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def asset_type_fiat_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای ارزهای فیات (به زودی)"""
+        query = update.callback_query
+        await query.answer("این قابلیت به زودی اضافه می‌شود", show_alert=True)
+
+    async def asset_type_stock_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای بورس ایران (به زودی)"""
+        query = update.callback_query
+        await query.answer("این قابلیت به زودی اضافه می‌شود", show_alert=True)
 
     async def toggle_asset_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای تغییر وضعیت دارایی"""
@@ -387,30 +551,69 @@ class InvestmentBot:
         await query.answer("✅ تغییرات ذخیره شد")
 
         # به‌روزرسانی پیام
-        await self.select_assets_callback(update, context)
+        if asset_type == 'gold' or asset_type == 'silver':
+            await self.asset_type_gold_silver_callback(update, context)
+        elif asset_type == 'usd':
+            await self.asset_type_usd_callback(update, context)
 
     async def setup_schedule_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای تنظیم زمان‌بندی"""
         query = update.callback_query
         await query.answer()
 
-        message = """
-⏰ تنظیم زمان‌بندی:
+        message = """⏰ تنظیم زمان‌بندی:
 
-لطفاً ساعت دلخواه خود را برای دریافت گزارش روزانه وارد کنید.
+چه زمانی هر روز می‌خوای قیمت‌ها برات ارسال بشن؟
+یه دکمه رو انتخاب کن یا تایم دلخواهت رو بنویس.
 
-فرمت: HH:MM (مثال: 09:00 یا 14:30)
+فرمت: HH:MM (مثال: 09:00 یا 14:30)"""
 
-برای لغو از /cancel استفاده کنید.
-"""
+        # دکمه‌های ساعت پیش‌فرض
+        keyboard = []
+        for i in range(0, len(PRESET_TIMES), 2):
+            row = []
+            for j in range(2):
+                if i + j < len(PRESET_TIMES):
+                    time_str = PRESET_TIMES[i + j]
+                    row.append(InlineKeyboardButton(f"🕐 {time_str}", callback_data=f'set_time_{time_str}'))
+            keyboard.append(row)
 
-        await query.edit_message_text(message)
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_main')])
 
-        # ذخیره وضعیت در context
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+        # ذخیره وضعیت برای دریافت زمان دستی
         context.user_data['waiting_for_time'] = True
 
+    async def set_time_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای تنظیم زمان از دکمه‌های پیش‌فرض"""
+        query = update.callback_query
+        time_str = query.data.split('_', 2)[2]
+
+        user_id = update.effective_user.id
+
+        # ذخیره در دیتابیس
+        db.update_notification_settings(user_id, enabled=True, notification_time=time_str)
+
+        # برنامه‌ریزی job جدید
+        self.schedule_user_notification(user_id, time_str)
+
+        await query.answer("✅ زمان‌بندی تنظیم شد")
+
+        message = f"""✅ زمان‌بندی با موفقیت تنظیم شد.
+
+🕐 هر روز در ساعت {time_str} گزارش قیمت‌ها برای شما ارسال می‌شود."""
+
+        keyboard = [
+            [InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_main')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
     async def receive_schedule_time(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """دریافت زمان از کاربر"""
+        """دریافت زمان دستی از کاربر"""
         if not context.user_data.get('waiting_for_time'):
             return
 
@@ -441,23 +644,51 @@ class InvestmentBot:
             f"🕐 هر روز در ساعت {time_text} گزارش قیمت‌ها برای شما ارسال می‌شود."
         )
 
-    async def enable_notification_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """callback برای فعال کردن اعلان"""
-        query = update.callback_query
+    async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دستور /settings یا دکمه تنظیمات"""
         user_id = update.effective_user.id
-
-        # فعال کردن نوتیفیکیشن
-        db.update_notification_settings(user_id, enabled=True)
-
-        await query.answer("✅ اعلان‌ها فعال شدند")
-
-        # بارگذاری مجدد تنظیمات
         settings = db.get_user_settings(user_id)
-        if settings and settings['notification_time']:
-            self.schedule_user_notification(user_id, settings['notification_time'])
 
-        # نمایش تنظیمات
-        await self.settings_command(update, context)
+        if not settings:
+            message = "شما هنوز تنظیماتی ندارید."
+            notification_status = "❌ غیرفعال"
+            notification_time = "تنظیم نشده"
+        else:
+            notification_status = "✅ فعال" if settings['notification_enabled'] else "❌ غیرفعال"
+            notification_time = settings['notification_time']
+
+            message = f"""⚙️ تنظیمات شما:
+
+🔔 وضعیت اعلان: {notification_status}
+🕐 زمان ارسال: {notification_time}
+🪙 تعداد ارزها: {len(settings['selected_cryptos'])}
+🥇 طلا: {'✅' if settings['include_gold'] else '❌'}
+🥈 نقره: {'✅' if settings['include_silver'] else '❌'}
+💵 دلار: {'✅' if settings['include_usd'] else '❌'}"""
+
+        # دکمه‌های تنظیمات
+        keyboard = [
+            [InlineKeyboardButton("🗑 حذف دارایی از لیست", callback_data='remove_assets')],
+            [InlineKeyboardButton("🕒 تغییر زمان ارسال", callback_data='setup_schedule')],
+            [InlineKeyboardButton("🔕 حذف اعلان تغییر قیمت", callback_data='disable_notification')],
+            [InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_main')]
+        ]
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # بررسی اینکه آیا از command آمده یا callback
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+
+    async def remove_assets_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای حذف دارایی‌ها"""
+        query = update.callback_query
+        await query.answer()
+
+        # هدایت به انتخاب دارایی‌ها
+        await self.select_assets_main_callback(update, context)
 
     async def disable_notification_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای غیرفعال کردن اعلان"""
@@ -476,40 +707,151 @@ class InvestmentBot:
 
         await query.answer("✅ اعلان‌ها غیرفعال شدند")
 
-        # نمایش تنظیمات
-        await self.settings_command(update, context)
+        message = "✅ اعلان‌های خودکار غیرفعال شدند."
+
+        keyboard = [
+            [InlineKeyboardButton("🔙 بازگشت به تنظیمات", callback_data='open_settings')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """دستور /help"""
-        help_text = """
-📚 راهنمای استفاده از ربات:
+        """دستور /help یا دکمه راهنما"""
+        help_text = """📚 راهنمای دستیار ارزَلان:
 
 🔹 دستورات اصلی:
 /start - شروع کار با ربات
-/price - دریافت قیمت‌های فعلی
-/settings - مشاهده و تغییر تنظیمات
-/schedule - تنظیم زمان ارسال خودکار
-/cryptos - انتخاب ارزهای دیجیتال
 /help - نمایش این راهنما
 
-🔹 قابلیت‌ها:
+🔹 امکانات:
 • مشاهده قیمت لحظه‌ای ارزهای دیجیتال
 • مشاهده قیمت طلا و نقره
-• مشاهده قیمت دلار
-• تغییرات هفتگی تمام دارایی‌ها
+• مشاهده قیمت دلار در ایران
+• تغییرات 24 ساعته و 7 روزه
 • دریافت خودکار در ساعت دلخواه
-• شخصی‌سازی لیست ارزها
+• انتخاب ارزهای دلخواه
 
 🔹 نحوه استفاده:
-1️⃣ از دستور /price برای دریافت قیمت‌ها استفاده کنید
-2️⃣ روی دکمه 🔄 کلیک کنید تا قیمت‌ها به‌روز شوند
-3️⃣ از /settings برای تنظیمات استفاده کنید
-4️⃣ ارزهای دلخواه خود را انتخاب کنید
-5️⃣ زمان دریافت خودکار را تنظیم کنید
+1️⃣ روی دکمه "📤 ارسال قیمت الان" کلیک کنید
+2️⃣ برای انتخاب ارزها روی "📋 انتخاب ارزها" کلیک کنید
+3️⃣ برای تنظیم زمان‌بندی روی "🕒 تنظیم زمان" کلیک کنید
+4️⃣ در تنظیمات می‌توانید دارایی‌ها را مدیریت کنید
 
-سوالی دارید؟ پیام بدهید! 💬
-"""
-        await update.message.reply_text(help_text)
+سوالی دارید؟ از دکمه پشتیبانی استفاده کنید! 💬"""
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(help_text)
+        else:
+            await update.message.reply_text(help_text)
+
+    async def support_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دکمه پشتیبانی"""
+        support_text = """👤 پشتیبانی دستیار ارزَلان
+
+برای ارتباط با پشتیبانی می‌توانید:
+• پیام خود را در همین چت بنویسید
+• یا با آیدی @support_arzalan در تماس باشید
+
+ما در اسرع وقت پاسخگوی شما خواهیم بود."""
+
+        await update.message.reply_text(support_text)
+
+    async def handle_keyboard_buttons(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """مدیریت دکمه‌های keyboard"""
+        text = update.message.text
+
+        if text == '📤 ارسال قیمت الان':
+            await self.send_prices(update, context)
+        elif text == '🕒 تنظیم زمان ارسال روزانه پیام':
+            # ارسال پیام با دکمه‌های inline
+            user = update.effective_user
+            await context.bot.send_message(
+                chat_id=user.id,
+                text="برای تنظیم زمان‌بندی روی دکمه زیر کلیک کنید:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⏰ تنظیم زمان‌بندی", callback_data='setup_schedule')]
+                ])
+            )
+        elif text == '🔔 اعلان تغییر قیمت':
+            await update.message.reply_text("این قابلیت به زودی اضافه می‌شود...")
+        elif text == '❓ راهنما':
+            await self.help_command(update, context)
+        elif text == '⚙️ تنظیمات':
+            await self.settings_command(update, context)
+        elif text == '👤 پشتیبانی':
+            await self.support_command(update, context)
+
+    async def back_to_main_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """بازگشت به منوی اصلی"""
+        query = update.callback_query
+        await query.answer()
+
+        message = "منوی اصلی"
+
+        keyboard = [
+            [InlineKeyboardButton("📤 ارسال قیمت الان", callback_data='send_prices_now')],
+            [InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main')],
+            [InlineKeyboardButton("⏰ زمان‌بندی", callback_data='setup_schedule')],
+            [InlineKeyboardButton("⚙️ تنظیمات", callback_data='open_settings')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def send_prices_now_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """ارسال قیمت‌ها از طریق callback"""
+        query = update.callback_query
+        await query.answer("در حال دریافت قیمت‌ها...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت تنظیمات کاربر
+            settings = db.get_user_settings(user_id)
+
+            if not settings:
+                crypto_ids = DEFAULT_CRYPTOS
+                include_gold = True
+                include_silver = True
+                include_usd = True
+            else:
+                crypto_ids = settings['selected_cryptos']
+                include_gold = bool(settings['include_gold'])
+                include_silver = bool(settings['include_silver'])
+                include_usd = bool(settings['include_usd'])
+
+            # دریافت قیمت‌ها
+            prices = price_fetcher.get_all_prices(
+                crypto_ids=crypto_ids,
+                include_gold=include_gold,
+                include_silver=include_silver,
+                include_usd=include_usd
+            )
+
+            # فرمت کردن پیام
+            message = price_fetcher.format_price_message(prices)
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                [
+                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(message, reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'price_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت قیمت: {e}")
+            await query.edit_message_text(
+                "❌ متأسفانه در دریافت قیمت‌ها خطایی رخ داد."
+            )
 
     def schedule_user_notification(self, user_id: int, notification_time: str):
         """برنامه‌ریزی ارسال خودکار برای کاربر"""
@@ -597,7 +939,6 @@ class InvestmentBot:
         """بارگذاری تمام زمان‌بندی‌های ذخیره شده"""
         try:
             # دریافت تمام کاربران با نوتیفیکیشن فعال
-            # این کار را با query مستقیم انجام می‌دهیم
             conn = db.get_connection()
             cursor = conn.cursor()
 
@@ -626,33 +967,47 @@ class InvestmentBot:
         # ساخت Application
         self.application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-        # ConversationHandler برای ثبت نام
-        registration_handler = ConversationHandler(
-            entry_points=[CommandHandler('start', self.start_command)],
-            states={
-                PHONE_NUMBER: [MessageHandler(filters.CONTACT, self.receive_phone_number)],
-            },
-            fallbacks=[],
-        )
-
         # Handler ها
-        self.application.add_handler(registration_handler)
-        self.application.add_handler(CommandHandler('price', self.price_command))
-        self.application.add_handler(CommandHandler('settings', self.settings_command))
+        self.application.add_handler(CommandHandler('start', self.start_command))
         self.application.add_handler(CommandHandler('help', self.help_command))
+        self.application.add_handler(CommandHandler('settings', self.settings_command))
 
         # Callback handlers
+        self.application.add_handler(CallbackQueryHandler(
+            self.check_membership_callback, pattern='^check_membership$'
+        ))
         self.application.add_handler(CallbackQueryHandler(
             self.refresh_prices_callback, pattern='^refresh_prices$'
         ))
         self.application.add_handler(CallbackQueryHandler(
-            self.select_cryptos_callback, pattern='^select_cryptos$'
+            self.select_assets_main_callback, pattern='^select_assets_main$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.asset_type_crypto_callback, pattern='^asset_type_crypto$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.crypto_top5_callback, pattern='^crypto_top5$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.crypto_top10_callback, pattern='^crypto_top10$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.crypto_manual_callback, pattern='^crypto_manual$'
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.toggle_crypto_callback, pattern='^toggle_crypto_'
         ))
         self.application.add_handler(CallbackQueryHandler(
-            self.select_assets_callback, pattern='^select_assets$'
+            self.asset_type_gold_silver_callback, pattern='^asset_type_gold_silver$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.asset_type_usd_callback, pattern='^asset_type_usd$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.asset_type_fiat_callback, pattern='^asset_type_fiat$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.asset_type_stock_callback, pattern='^asset_type_stock$'
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.toggle_asset_callback, pattern='^toggle_asset_'
@@ -661,26 +1016,35 @@ class InvestmentBot:
             self.setup_schedule_callback, pattern='^setup_schedule$'
         ))
         self.application.add_handler(CallbackQueryHandler(
-            self.enable_notification_callback, pattern='^enable_notification$'
+            self.set_time_callback, pattern='^set_time_'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.remove_assets_callback, pattern='^remove_assets$'
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.disable_notification_callback, pattern='^disable_notification$'
         ))
         self.application.add_handler(CallbackQueryHandler(
-            self.settings_command, pattern='^back_to_settings$'
+            self.settings_command, pattern='^open_settings$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.back_to_main_callback, pattern='^back_to_main$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.send_prices_now_callback, pattern='^send_prices_now$'
         ))
 
-        # Handler برای دریافت زمان
+        # Handler برای دکمه‌های keyboard
         self.application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            self.receive_schedule_time
+            self.handle_keyboard_buttons
         ))
 
         # بارگذاری زمان‌بندی‌های ذخیره شده
         self.load_scheduled_notifications()
 
         # اجرای ربات
-        logger.info("ربات در حال اجرا است...")
+        logger.info("ربات دستیار ارزَلان در حال اجرا است...")
 
         # Initialize and start the application
         await self.application.initialize()
@@ -705,7 +1069,7 @@ async def main():
         logger.error("توکن تلگرام یافت نشد! لطفاً فایل .env را تنظیم کنید.")
         return
 
-    bot = InvestmentBot()
+    bot = ArzalanBot()
     await bot.run()
 
 
