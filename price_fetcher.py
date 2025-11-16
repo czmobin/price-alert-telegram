@@ -24,6 +24,15 @@ class PriceFetcher:
         self._bonbast_cache = None
         self._bonbast_cache_time = None
 
+    def safe_float(self, value, default: float = 0.0) -> float:
+        """تبدیل امن به float با مدیریت None و مقادیر نامعتبر"""
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+
     def format_number(self, number: float) -> str:
         """فرمت کردن اعداد به صورت خوانا"""
         if number >= 1:
@@ -96,8 +105,8 @@ class PriceFetcher:
                         data = response.json()
                         crypto_id = crypto_to_symbol[binance_symbol]
 
-                        price = float(data.get('lastPrice', 0))
-                        change_24h = float(data.get('priceChangePercent', 0))
+                        price = self.safe_float(data.get('lastPrice'), 0)
+                        change_24h = self.safe_float(data.get('priceChangePercent'), 0)
 
                         result[crypto_id] = {
                             'price': price,
@@ -143,8 +152,8 @@ class PriceFetcher:
                 if crypto_id in data:
                     crypto_data = data[crypto_id]
                     result[crypto_id] = {
-                        'price': crypto_data.get('usd', 0),
-                        'change_24h': crypto_data.get('usd_24h_change', 0),
+                        'price': self.safe_float(crypto_data.get('usd'), 0),
+                        'change_24h': self.safe_float(crypto_data.get('usd_24h_change'), 0),
                         'change_7d': 0,
                         'symbol': CRYPTO_SYMBOLS.get(crypto_id, crypto_id.upper())
                     }
@@ -210,12 +219,10 @@ class PriceFetcher:
                             price = ticker.get('price')
 
                             if price:
-                                try:
-                                    # تبدیل به float (قیمت به تومان است)
-                                    price_toman = float(price)
+                                # تبدیل به float (قیمت به تومان است)
+                                price_toman = self.safe_float(price, 0)
+                                if price_toman > 0:
                                     result[crypto_id] = price_toman
-                                except (ValueError, TypeError):
-                                    continue
 
             return result
 
@@ -239,9 +246,9 @@ class PriceFetcher:
             if response.status_code == 200:
                 data = response.json()
                 return {
-                    'price': data.get('price', 0),
-                    'change_24h': data.get('change_24h', 0),
-                    'change_7d': data.get('change_7d', 0),
+                    'price': self.safe_float(data.get('price'), 0),
+                    'change_24h': self.safe_float(data.get('change_24h'), 0),
+                    'change_7d': self.safe_float(data.get('change_7d'), 0),
                     'unit': 'USD/oz',
                     'symbol': '🥇'
                 }
@@ -272,9 +279,9 @@ class PriceFetcher:
             if 'pax-gold' in data:
                 gold_data = data['pax-gold']
                 return {
-                    'price': gold_data.get('usd', 0),
-                    'change_24h': gold_data.get('usd_24h_change', 0),
-                    'change_7d': gold_data.get('usd_7d_change', 0),
+                    'price': self.safe_float(gold_data.get('usd'), 0),
+                    'change_24h': self.safe_float(gold_data.get('usd_24h_change'), 0),
+                    'change_7d': self.safe_float(gold_data.get('usd_7d_change'), 0),
                     'unit': 'USD/oz',
                     'symbol': '🥇'
                 }
@@ -308,9 +315,9 @@ class PriceFetcher:
             if 'silver-token' in data:
                 silver_data = data['silver-token']
                 return {
-                    'price': silver_data.get('usd', 0),
-                    'change_24h': silver_data.get('usd_24h_change', 0),
-                    'change_7d': silver_data.get('usd_7d_change', 0),
+                    'price': self.safe_float(silver_data.get('usd'), 0),
+                    'change_24h': self.safe_float(silver_data.get('usd_24h_change'), 0),
+                    'change_7d': self.safe_float(silver_data.get('usd_7d_change'), 0),
                     'unit': 'USD/oz',
                     'symbol': '🥈'
                 }
@@ -340,10 +347,10 @@ class PriceFetcher:
                 if isinstance(data, dict) and 'data' in data:
                     price_data = data['data']
                     if isinstance(price_data, dict):
-                        current_price = float(price_data.get('p', 0)) / 10  # تبدیل به تومان
+                        current_price = self.safe_float(price_data.get('p'), 0) / 10  # تبدیل به تومان
                     elif isinstance(price_data, list) and len(price_data) > 0:
                         # اگر لیست بود، اولین آیتم رو بگیر
-                        current_price = float(price_data[0].get('p', 0)) / 10 if isinstance(price_data[0], dict) else 0
+                        current_price = self.safe_float(price_data[0].get('p'), 0) / 10 if isinstance(price_data[0], dict) else 0
                     else:
                         current_price = 0
 
@@ -358,7 +365,7 @@ class PriceFetcher:
                 elif isinstance(data, list) and len(data) > 0:
                     # اگر مستقیم لیست بود
                     price_data = data[0] if isinstance(data[0], dict) else {}
-                    current_price = float(price_data.get('p', 0)) / 10 if price_data else 0
+                    current_price = self.safe_float(price_data.get('p'), 0) / 10 if price_data else 0
 
                     if current_price > 0:
                         return {
@@ -455,7 +462,7 @@ class PriceFetcher:
                         price = data[0].get('p')
 
                 if price:
-                    current_price = float(price) / 10  # تبدیل به تومان
+                    current_price = self.safe_float(price, 0) / 10  # تبدیل به تومان
                     if current_price > 0:
                         return {
                             'price': current_price,
