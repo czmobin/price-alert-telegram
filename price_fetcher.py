@@ -673,7 +673,7 @@ class PriceFetcher:
                     lines.append(f"{data['symbol']} {data['name']}: {self.format_number(data['price'])} تومان")
 
         # 3. نقره
-        if prices.get('silver'):
+        if prices.get('silver') and prices['silver'] is not None:
             silver = prices['silver']
             change = self.format_percentage_compact(silver.get('change_24h', 0))
             emoji = self.get_trend_emoji(silver.get('change_24h', 0))
@@ -693,7 +693,7 @@ class PriceFetcher:
                 lines.append(f"{emoji} {symbol}: ${price_usd} (24h: {change_str})")
 
                 # قیمت تومانی (اگر موجود باشد)
-                if 'price_toman' in data and data['price_toman'] > 0:
+                if 'price_toman' in data and data.get('price_toman') and data['price_toman'] > 0:
                     price_toman = self.format_number(data['price_toman'])
                     lines.append(f"     {price_toman} تومان ({change_str})")
 
