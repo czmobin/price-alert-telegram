@@ -197,27 +197,25 @@ class PriceFetcher:
             if response.status_code == 200:
                 data = response.json()
 
-                # data می‌تواند یک لیست یا dict با کلید results باشد
-                tickers = data if isinstance(data, list) else data.get('results', [])
+                # data یک لیست از تیکرها است
+                # هر ticker شامل: symbol, price, daily_change_price, low, high, timestamp
+                if isinstance(data, list):
+                    for ticker in data:
+                        symbol = ticker.get('symbol')
 
-                # پردازش تیکرها
-                for ticker in tickers:
-                    # symbol می‌تواند در فیلدهای مختلف باشد
-                    symbol = ticker.get('symbol') or ticker.get('code') or ticker.get('market')
+                        if symbol and symbol in symbol_to_crypto:
+                            crypto_id = symbol_to_crypto[symbol]
 
-                    if symbol and symbol in symbol_to_crypto:
-                        crypto_id = symbol_to_crypto[symbol]
+                            # دریافت قیمت (به صورت string است)
+                            price = ticker.get('price')
 
-                        # قیمت می‌تواند در فیلدهای مختلف باشد
-                        price = ticker.get('price') or ticker.get('last') or ticker.get('last_price')
-
-                        if price:
-                            try:
-                                # تبدیل به float (قیمت به تومان است)
-                                price_toman = float(price)
-                                result[crypto_id] = price_toman
-                            except (ValueError, TypeError):
-                                continue
+                            if price:
+                                try:
+                                    # تبدیل به float (قیمت به تومان است)
+                                    price_toman = float(price)
+                                    result[crypto_id] = price_toman
+                                except (ValueError, TypeError):
+                                    continue
 
             return result
 
