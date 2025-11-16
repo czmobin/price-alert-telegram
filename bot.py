@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 # وضعیت‌های مکالمه
 WAITING_FOR_TIME = range(1)
+WAITING_FOR_BROADCAST_MESSAGE = range(1)
 
 # نمونه‌های global
 db = Database()
@@ -1008,6 +1009,11 @@ class ArzalanBot:
 
     async def handle_keyboard_buttons(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """مدیریت دکمه‌های keyboard"""
+        # چک کردن اینکه آیا در حالت انتظار برای broadcast هستیم
+        if context.user_data.get('waiting_for_broadcast'):
+            await self.receive_broadcast_message(update, context)
+            return
+
         text = update.message.text
 
         if text == '📤 ارسال قیمت الان':
@@ -1260,6 +1266,7 @@ class ArzalanBot:
             [InlineKeyboardButton("🔥 محبوب‌ترین ارزها", callback_data='admin_stats_popular_cryptos')],
             [InlineKeyboardButton("📈 فعالیت کاربران", callback_data='admin_stats_activity')],
             [InlineKeyboardButton("👤 کاربران اخیر", callback_data='admin_recent_users')],
+            [InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data='admin_broadcast')],
             [InlineKeyboardButton("🔙 بستن پنل", callback_data='admin_close')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1520,6 +1527,194 @@ class ArzalanBot:
         await query.answer()
         await query.edit_message_text("✅ پنل ادمین بسته شد.")
 
+    async def admin_broadcast_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """شروع فرآیند ارسال پیام همگانی"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت تعداد کاربران فعال
+        active_users_count = db.get_active_users_count()
+
+        message = f"""📢 ارسال پیام همگانی
+
+تعداد کاربران فعال: {active_users_count:,}
+
+لطفاً پیامی که می‌خواهید برای همه کاربران ارسال شود را بنویسید.
+
+⚠️ توجه:
+• پیام برای همه کاربران فعال ارسال می‌شود
+• می‌توانید متن، عکس، ویدیو یا فایل ارسال کنید
+• برای لغو، /cancel را ارسال کنید"""
+
+        keyboard = [
+            [InlineKeyboardButton("❌ لغو", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+        # ذخیره وضعیت در context
+        context.user_data['waiting_for_broadcast'] = True
+
+    async def receive_broadcast_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دریافت پیام برای ارسال همگانی"""
+        # چک اینکه آیا در حالت انتظار برای broadcast هستیم
+        if not context.user_data.get('waiting_for_broadcast'):
+            return
+
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            return
+
+        # ذخیره پیام در context
+        context.user_data['broadcast_message'] = update.message
+        context.user_data['waiting_for_broadcast'] = False
+
+        # نمایش پیش‌نمایش و درخواست تایید
+        active_users_count = db.get_active_users_count()
+
+        preview_message = f"""✅ پیام دریافت شد!
+
+📊 این پیام برای {active_users_count:,} کاربر فعال ارسال خواهد شد.
+
+آیا از ارسال این پیام اطمینان دارید؟"""
+
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ بله، ارسال شود", callback_data='admin_broadcast_confirm'),
+                InlineKeyboardButton("❌ لغو", callback_data='admin_broadcast_cancel')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(preview_message, reply_markup=reply_markup)
+
+    async def admin_broadcast_confirm_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """تایید و ارسال پیام همگانی"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت پیام از context
+        broadcast_message = context.user_data.get('broadcast_message')
+        if not broadcast_message:
+            await query.edit_message_text("❌ خطا: پیامی برای ارسال یافت نشد.")
+            return
+
+        # نمایش پیام در حال ارسال
+        await query.edit_message_text("⏳ در حال ارسال پیام به کاربران...")
+
+        # دریافت لیست کاربران فعال
+        try:
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT user_id FROM users WHERE is_active = 1')
+            users = [row['user_id'] for row in cursor.fetchall()]
+            conn.close()
+        except Exception as e:
+            logger.error(f"خطا در دریافت کاربران: {e}")
+            await query.edit_message_text("❌ خطا در دریافت لیست کاربران")
+            return
+
+        # ارسال پیام به کاربران
+        success_count = 0
+        failed_count = 0
+
+        for target_user_id in users:
+            try:
+                # ارسال پیام بر اساس نوع
+                if broadcast_message.text:
+                    await context.bot.send_message(
+                        chat_id=target_user_id,
+                        text=broadcast_message.text
+                    )
+                elif broadcast_message.photo:
+                    await context.bot.send_photo(
+                        chat_id=target_user_id,
+                        photo=broadcast_message.photo[-1].file_id,
+                        caption=broadcast_message.caption
+                    )
+                elif broadcast_message.video:
+                    await context.bot.send_video(
+                        chat_id=target_user_id,
+                        video=broadcast_message.video.file_id,
+                        caption=broadcast_message.caption
+                    )
+                elif broadcast_message.document:
+                    await context.bot.send_document(
+                        chat_id=target_user_id,
+                        document=broadcast_message.document.file_id,
+                        caption=broadcast_message.caption
+                    )
+                elif broadcast_message.audio:
+                    await context.bot.send_audio(
+                        chat_id=target_user_id,
+                        audio=broadcast_message.audio.file_id,
+                        caption=broadcast_message.caption
+                    )
+                elif broadcast_message.voice:
+                    await context.bot.send_voice(
+                        chat_id=target_user_id,
+                        voice=broadcast_message.voice.file_id,
+                        caption=broadcast_message.caption
+                    )
+
+                success_count += 1
+
+                # تاخیر کوچک برای جلوگیری از rate limit
+                await asyncio.sleep(0.05)
+
+            except Exception as e:
+                logger.error(f"خطا در ارسال به {target_user_id}: {e}")
+                failed_count += 1
+
+        # نمایش نتیجه
+        result_message = f"""✅ ارسال پیام همگانی تکمیل شد
+
+📊 آمار ارسال:
+• موفق: {success_count:,} کاربر
+• ناموفق: {failed_count:,} کاربر
+• جمع کل: {success_count + failed_count:,} کاربر"""
+
+        keyboard = [
+            [InlineKeyboardButton("🔙 بازگشت به پنل", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(result_message, reply_markup=reply_markup)
+
+        # پاک کردن پیام از context
+        context.user_data.pop('broadcast_message', None)
+
+    async def admin_broadcast_cancel_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """لغو ارسال پیام همگانی"""
+        query = update.callback_query
+        await query.answer()
+
+        # پاک کردن وضعیت از context
+        context.user_data.pop('broadcast_message', None)
+        context.user_data.pop('waiting_for_broadcast', None)
+
+        await query.edit_message_text("❌ ارسال پیام همگانی لغو شد.")
+
+        # بازگشت به پنل ادمین
+        await self.show_admin_panel(update, context)
+
     async def run(self):
         """اجرای ربات"""
         # ساخت Application
@@ -1631,6 +1826,15 @@ class ArzalanBot:
             self.admin_recent_users_callback, pattern='^admin_recent_users$'
         ))
         self.application.add_handler(CallbackQueryHandler(
+            self.admin_broadcast_callback, pattern='^admin_broadcast$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_broadcast_confirm_callback, pattern='^admin_broadcast_confirm$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_broadcast_cancel_callback, pattern='^admin_broadcast_cancel$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
             self.admin_close_callback, pattern='^admin_close$'
         ))
 
@@ -1638,6 +1842,12 @@ class ArzalanBot:
         self.application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             self.handle_keyboard_buttons
+        ))
+
+        # Handler برای دریافت انواع پیام برای broadcast
+        self.application.add_handler(MessageHandler(
+            (filters.PHOTO | filters.VIDEO | filters.DOCUMENT | filters.AUDIO | filters.VOICE) & ~filters.COMMAND,
+            self.receive_broadcast_message
         ))
 
         # بارگذاری زمان‌بندی‌های ذخیره شده
