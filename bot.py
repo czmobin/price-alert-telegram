@@ -184,7 +184,7 @@ class ArzalanBot:
                 gold_item_ids = settings.get('selected_gold_items', [])
 
             # دریافت قیمت‌ها
-            prices = price_fetcher.get_all_prices(
+            prices = await price_fetcher.get_all_prices(
                 crypto_ids=crypto_ids,
                 include_gold=include_gold,
                 include_silver=include_silver,
@@ -244,7 +244,7 @@ class ArzalanBot:
                 gold_item_ids = settings.get('selected_gold_items', [])
 
             # دریافت قیمت‌ها
-            prices = price_fetcher.get_all_prices(
+            prices = await price_fetcher.get_all_prices(
                 crypto_ids=crypto_ids,
                 include_gold=include_gold,
                 include_silver=include_silver,
@@ -1010,7 +1010,7 @@ class ArzalanBot:
                 gold_item_ids = settings.get('selected_gold_items', [])
 
             # دریافت قیمت‌ها
-            prices = price_fetcher.get_all_prices(
+            prices = await price_fetcher.get_all_prices(
                 crypto_ids=crypto_ids,
                 include_gold=include_gold,
                 include_silver=include_silver,
@@ -1097,7 +1097,7 @@ class ArzalanBot:
             gold_item_ids = settings.get('selected_gold_items', [])
 
             # دریافت قیمت‌ها
-            prices = price_fetcher.get_all_prices(
+            prices = await price_fetcher.get_all_prices(
                 crypto_ids=crypto_ids,
                 include_gold=include_gold,
                 include_silver=include_silver,
