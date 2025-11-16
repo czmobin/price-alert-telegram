@@ -163,12 +163,12 @@ class PriceFetcher:
             print(f"خطا در دریافت قیمت از CoinGecko: {e}")
             return {}
 
-    async def get_crypto_toman_prices(self, crypto_ids: List[str]) -> Dict[str, float]:
+    async def get_crypto_toman_prices(self, crypto_ids: List[str]) -> Dict[str, Dict]:
         """
         دریافت قیمت تومانی ارزهای دیجیتال از Bitpin
 
         Returns:
-            dict: {'bitcoin': 1100000000, 'ethereum': 150000000, ...}
+            dict: {'bitcoin': {'price': 1100000000, 'change_24h': -2.4}, ...}
         """
         # Mapping از crypto ID به symbol Bitpin
         bitpin_symbols = {
@@ -199,7 +199,7 @@ class PriceFetcher:
 
         try:
             # درخواست به API Bitpin برای همه تیکرها
-            url = "https://api.bitpin.ir/v1/mkt/tickers/"
+            url = "https://api.bitpin.org/api/v1/mkt/tickers/"
 
             response = self.session.get(url, timeout=10)
 
@@ -215,14 +215,20 @@ class PriceFetcher:
                         if symbol and symbol in symbol_to_crypto:
                             crypto_id = symbol_to_crypto[symbol]
 
-                            # دریافت قیمت (به صورت string است)
+                            # دریافت قیمت و تغییرات (به صورت string است)
                             price = ticker.get('price')
+                            daily_change = ticker.get('daily_change_price')
 
                             if price:
-                                # تبدیل به float (قیمت به تومان است)
-                                price_toman = self.safe_float(price, 0)
+                                # تبدیل به float (قیمت به ریال است، تبدیل به تومان)
+                                price_toman = self.safe_float(price, 0) / 10
+                                change_24h = self.safe_float(daily_change, 0)
+
                                 if price_toman > 0:
-                                    result[crypto_id] = price_toman
+                                    result[crypto_id] = {
+                                        'price': price_toman,
+                                        'change_24h': change_24h
+                                    }
 
             return result
 
@@ -621,9 +627,12 @@ class PriceFetcher:
             # دریافت قیمت تومانی
             toman_prices = await self.get_crypto_toman_prices(crypto_ids)
             # افزودن قیمت تومانی به نتایج
-            for crypto_id, toman_price in toman_prices.items():
+            for crypto_id, toman_data in toman_prices.items():
                 if crypto_id in result['cryptos']:
-                    result['cryptos'][crypto_id]['price_toman'] = toman_price
+                    result['cryptos'][crypto_id]['price_toman'] = toman_data.get('price')
+                    # استفاده از تغییرات تومانی اگر موجود بود
+                    if 'change_24h' in toman_data:
+                        result['cryptos'][crypto_id]['change_24h_toman'] = toman_data['change_24h']
 
         # دریافت قیمت طلا
         if include_gold:
@@ -699,7 +708,10 @@ class PriceFetcher:
                 # قیمت تومانی (اگر موجود باشد)
                 if 'price_toman' in data and data.get('price_toman') and data['price_toman'] > 0:
                     price_toman = self.format_number(data['price_toman'])
-                    lines.append(f"     {price_toman} تومان ({change_str})")
+                    # استفاده از تغییرات تومانی اگر موجود بود، در غیر این صورت از تغییرات دلاری استفاده کن
+                    change_24h_toman = data.get('change_24h_toman', change_24h)
+                    change_toman_str = self.format_percentage_compact(change_24h_toman)
+                    lines.append(f"     {price_toman} تومان ({change_toman_str})")
 
         # 5. سکه‌های طلا
         if prices.get('gold_coins'):
