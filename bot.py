@@ -1846,7 +1846,7 @@ class ArzalanBot:
 
         # Handler برای دریافت انواع پیام برای broadcast
         self.application.add_handler(MessageHandler(
-            (filters.PHOTO | filters.VIDEO | filters.DOCUMENT | filters.AUDIO | filters.VOICE) & ~filters.COMMAND,
+            (filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.AUDIO | filters.VOICE) & ~filters.COMMAND,
             self.receive_broadcast_message
         ))
 
