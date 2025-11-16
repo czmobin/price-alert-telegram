@@ -563,7 +563,6 @@ class PriceFetcher:
         """
         lines = []
         lines.append("📊 گزارش قیمت‌های لحظه‌ای")
-        lines.append("=" * 35)
         lines.append("")
 
         # ارزهای دیجیتال
