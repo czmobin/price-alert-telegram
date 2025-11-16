@@ -156,74 +156,71 @@ class PriceFetcher:
 
     async def get_crypto_toman_prices(self, crypto_ids: List[str]) -> Dict[str, float]:
         """
-        دریافت قیمت تومانی ارزهای دیجیتال از Nobitex
+        دریافت قیمت تومانی ارزهای دیجیتال از Bitpin
 
         Returns:
             dict: {'bitcoin': 1100000000, 'ethereum': 150000000, ...}
         """
-        # Mapping از crypto ID به symbol Nobitex
-        nobitex_symbols = {
-            'bitcoin': 'btc',
-            'ethereum': 'eth',
-            'tether': 'usdt',
-            'ripple': 'xrp',
-            'litecoin': 'ltc',
-            'binancecoin': 'bnb',
-            'dogecoin': 'doge',
-            'cardano': 'ada',
-            'solana': 'sol',
-            'tron': 'trx',
-            'stellar': 'xlm',
-            'polkadot': 'dot',
-            'shiba-inu': 'shib',
-            'the-open-network': 'ton'
+        # Mapping از crypto ID به symbol Bitpin
+        bitpin_symbols = {
+            'bitcoin': 'BTC_IRT',
+            'ethereum': 'ETH_IRT',
+            'tether': 'USDT_IRT',
+            'ripple': 'XRP_IRT',
+            'litecoin': 'LTC_IRT',
+            'binancecoin': 'BNB_IRT',
+            'dogecoin': 'DOGE_IRT',
+            'cardano': 'ADA_IRT',
+            'solana': 'SOL_IRT',
+            'tron': 'TRX_IRT',
+            'stellar': 'XLM_IRT',
+            'polkadot': 'DOT_IRT',
+            'shiba-inu': 'SHIB_IRT',
+            'the-open-network': 'TON_IRT',
+            'usd-coin': 'USDC_IRT',
+            'chainlink': 'LINK_IRT',
+            'uniswap': 'UNI_IRT',
+            'avalanche-2': 'AVAX_IRT'
         }
+
+        # Mapping معکوس برای پیدا کردن crypto ID از symbol
+        symbol_to_crypto = {v: k for k, v in bitpin_symbols.items()}
 
         result = {}
 
         try:
-            # ساخت لیست symbols برای درخواست
-            symbols_to_fetch = []
-            for crypto_id in crypto_ids:
-                if crypto_id in nobitex_symbols:
-                    symbols_to_fetch.append(nobitex_symbols[crypto_id])
+            # درخواست به API Bitpin برای همه تیکرها
+            url = "https://api.bitpin.ir/v1/mkt/tickers/"
 
-            if not symbols_to_fetch:
-                return {}
-
-            # درخواست به API Nobitex برای همه symbols
-            url = "https://api.nobitex.ir/market/stats"
-            params = {
-                'srcCurrency': ','.join(symbols_to_fetch),
-                'dstCurrency': 'rls'
-            }
-
-            response = self.session.get(url, params=params, timeout=10)
+            response = self.session.get(url, timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
 
-                if data.get('status') == 'ok' and 'stats' in data:
-                    stats = data['stats']
+                # data یک لیست از تیکرها است
+                # هر ticker شامل: symbol, price, daily_change_price, low, high, timestamp
+                if isinstance(data, list):
+                    for ticker in data:
+                        symbol = ticker.get('symbol')
 
-                    # پردازش نتایج
-                    for crypto_id in crypto_ids:
-                        if crypto_id in nobitex_symbols:
-                            symbol = nobitex_symbols[crypto_id]
-                            market_key = f"{symbol}-rls"
+                        if symbol and symbol in symbol_to_crypto:
+                            crypto_id = symbol_to_crypto[symbol]
 
-                            if market_key in stats:
-                                market_data = stats[market_key]
-                                # قیمت آخرین معامله (به تومان)
-                                price_rls = float(market_data.get('latest', 0))
-                                # تبدیل ریال به تومان
-                                price_toman = price_rls / 10
-                                result[crypto_id] = price_toman
+                            # دریافت قیمت (به صورت string است)
+                            price = ticker.get('price')
+
+                            if price:
+                                try:
+                                    # تبدیل به float (قیمت به تومان است)
+                                    price_toman = float(price)
+                                    result[crypto_id] = price_toman
+                                except (ValueError, TypeError):
+                                    continue
 
             return result
 
         except Exception as e:
-            print(f"خطا در دریافت قیمت تومانی از Nobitex: {e}")
+            print(f"خطا در دریافت قیمت تومانی از Bitpin: {e}")
             return {}
 
     def get_gold_price(self) -> Optional[Dict]:
@@ -673,7 +670,7 @@ class PriceFetcher:
                     lines.append(f"{data['symbol']} {data['name']}: {self.format_number(data['price'])} تومان")
 
         # 3. نقره
-        if prices.get('silver'):
+        if prices.get('silver') and prices['silver'] is not None:
             silver = prices['silver']
             change = self.format_percentage_compact(silver.get('change_24h', 0))
             emoji = self.get_trend_emoji(silver.get('change_24h', 0))
@@ -693,7 +690,7 @@ class PriceFetcher:
                 lines.append(f"{emoji} {symbol}: ${price_usd} (24h: {change_str})")
 
                 # قیمت تومانی (اگر موجود باشد)
-                if 'price_toman' in data and data['price_toman'] > 0:
+                if 'price_toman' in data and data.get('price_toman') and data['price_toman'] > 0:
                     price_toman = self.format_number(data['price_toman'])
                     lines.append(f"     {price_toman} تومان ({change_str})")
 
