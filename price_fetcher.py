@@ -42,6 +42,24 @@ class PriceFetcher:
         else:
             return f"➡️ {percentage:.2f}%"
 
+    def format_percentage_compact(self, percentage: float) -> str:
+        """فرمت کردن درصد تغییرات (فرمت فشرده)"""
+        if percentage > 0:
+            return f"↑{percentage:.1f}%"
+        elif percentage < 0:
+            return f"↓{abs(percentage):.1f}%"
+        else:
+            return f"→{percentage:.1f}%"
+
+    def get_trend_emoji(self, percentage: float) -> str:
+        """ایموجی روند بر اساس درصد تغییر"""
+        if percentage > 0:
+            return "🟢"
+        elif percentage < 0:
+            return "🔴"
+        else:
+            return "🟡"
+
     def get_crypto_prices(self, crypto_ids: List[str]) -> Dict[str, Dict]:
         """
         دریافت قیمت ارزهای دیجیتال از Binance API (با fallback به CoinGecko)
@@ -134,6 +152,78 @@ class PriceFetcher:
             return result
         except Exception as e:
             print(f"خطا در دریافت قیمت از CoinGecko: {e}")
+            return {}
+
+    async def get_crypto_toman_prices(self, crypto_ids: List[str]) -> Dict[str, float]:
+        """
+        دریافت قیمت تومانی ارزهای دیجیتال از Nobitex
+
+        Returns:
+            dict: {'bitcoin': 1100000000, 'ethereum': 150000000, ...}
+        """
+        # Mapping از crypto ID به symbol Nobitex
+        nobitex_symbols = {
+            'bitcoin': 'btc',
+            'ethereum': 'eth',
+            'tether': 'usdt',
+            'ripple': 'xrp',
+            'litecoin': 'ltc',
+            'binancecoin': 'bnb',
+            'dogecoin': 'doge',
+            'cardano': 'ada',
+            'solana': 'sol',
+            'tron': 'trx',
+            'stellar': 'xlm',
+            'polkadot': 'dot',
+            'shiba-inu': 'shib',
+            'the-open-network': 'ton'
+        }
+
+        result = {}
+
+        try:
+            # ساخت لیست symbols برای درخواست
+            symbols_to_fetch = []
+            for crypto_id in crypto_ids:
+                if crypto_id in nobitex_symbols:
+                    symbols_to_fetch.append(nobitex_symbols[crypto_id])
+
+            if not symbols_to_fetch:
+                return {}
+
+            # درخواست به API Nobitex برای همه symbols
+            url = "https://api.nobitex.ir/market/stats"
+            params = {
+                'srcCurrency': ','.join(symbols_to_fetch),
+                'dstCurrency': 'rls'
+            }
+
+            response = self.session.get(url, params=params, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                if data.get('status') == 'ok' and 'stats' in data:
+                    stats = data['stats']
+
+                    # پردازش نتایج
+                    for crypto_id in crypto_ids:
+                        if crypto_id in nobitex_symbols:
+                            symbol = nobitex_symbols[crypto_id]
+                            market_key = f"{symbol}-rls"
+
+                            if market_key in stats:
+                                market_data = stats[market_key]
+                                # قیمت آخرین معامله (به تومان)
+                                price_rls = float(market_data.get('latest', 0))
+                                # تبدیل ریال به تومان
+                                price_toman = price_rls / 10
+                                result[crypto_id] = price_toman
+
+            return result
+
+        except Exception as e:
+            print(f"خطا در دریافت قیمت تومانی از Nobitex: {e}")
             return {}
 
     def get_gold_price(self) -> Optional[Dict]:
@@ -524,6 +614,12 @@ class PriceFetcher:
         # دریافت قیمت کریپتوها
         if crypto_ids:
             result['cryptos'] = self.get_crypto_prices(crypto_ids)
+            # دریافت قیمت تومانی
+            toman_prices = await self.get_crypto_toman_prices(crypto_ids)
+            # افزودن قیمت تومانی به نتایج
+            for crypto_id, toman_price in toman_prices.items():
+                if crypto_id in result['cryptos']:
+                    result['cryptos'][crypto_id]['price_toman'] = toman_price
 
         # دریافت قیمت طلا
         if include_gold:
@@ -553,7 +649,7 @@ class PriceFetcher:
 
     def format_price_message(self, prices: Dict) -> str:
         """
-        فرمت کردن قیمت‌ها به صورت پیام تلگرام
+        فرمت کردن قیمت‌ها به صورت پیام تلگرام (فرمت فشرده)
 
         Args:
             prices: خروجی تابع get_all_prices
@@ -562,99 +658,79 @@ class PriceFetcher:
             str: پیام فرمت شده
         """
         lines = []
-        lines.append("📊 گزارش قیمت‌های لحظه‌ای")
+        lines.append("گزارش قیمت‌های لحظه‌ای با ارزَلان:")
         lines.append("")
 
-        # ارزهای دیجیتال
-        if prices.get('cryptos'):
-            lines.append("🪙 ارزهای دیجیتال:")
-            lines.append("")
-
-            for crypto_id, data in prices['cryptos'].items():
-                symbol = data['symbol']
-                price = self.format_number(data['price'])
-                change_24h = self.format_percentage(data['change_24h'])
-
-                lines.append(f"▫️ {symbol}")
-                lines.append(f"   قیمت: ${price}")
-                lines.append(f"   تغییر 24h: {change_24h}")
-                lines.append("")
-
-        # طلا
-        if prices.get('gold'):
-            gold = prices['gold']
-            lines.append(f"{gold['symbol']} طلا (اونس جهانی):")
-            lines.append(f"   قیمت: ${self.format_number(gold['price'])}")
-            if gold.get('change_7d', 0) != 0:
-                lines.append(f"   تغییر 7d: {self.format_percentage(gold['change_7d'])}")
-            lines.append("")
-
-        # نقره
-        if prices.get('silver'):
-            silver = prices['silver']
-            lines.append(f"{silver['symbol']} نقره (اونس جهانی):")
-            lines.append(f"   قیمت: ${self.format_number(silver['price'])}")
-            if silver.get('change_7d', 0) != 0:
-                lines.append(f"   تغییر 7d: {self.format_percentage(silver['change_7d'])}")
-            lines.append("")
-
-        # دلار
+        # 1. دلار آمریکا
         if prices.get('usd_irr'):
             usd = prices['usd_irr']
-            lines.append(f"{usd['symbol']} دلار آمریکا:")
-            lines.append(f"   قیمت: {self.format_number(usd['price'])} {usd['unit']}")
-            lines.append("")
+            lines.append(f"{usd['symbol']} دلار: {self.format_number(usd['price'])} تومان")
 
-        # ارزهای فیات
-        if prices.get('fiat_currencies'):
-            lines.append("💱 ارزهای فیات:")
-            lines.append("")
+        # 2. طلای 18 عیار (از آیتم‌های طلا)
+        if prices.get('gold_items'):
+            for item_id, data in prices['gold_items'].items():
+                if item_id == 'gol18':
+                    lines.append(f"{data['symbol']} {data['name']}: {self.format_number(data['price'])} تومان")
 
-            for currency_id, data in prices['fiat_currencies'].items():
+        # 3. نقره
+        if prices.get('silver'):
+            silver = prices['silver']
+            change = self.format_percentage_compact(silver.get('change_24h', 0))
+            emoji = self.get_trend_emoji(silver.get('change_24h', 0))
+            lines.append(f"{emoji} نقره: ${self.format_number(silver['price'])} (24h: {change})")
+
+        lines.append("")
+
+        # 4. ارزهای دیجیتال
+        if prices.get('cryptos'):
+            for crypto_id, data in prices['cryptos'].items():
                 symbol = data['symbol']
-                name = data['name']
-                buy = self.format_number(data['buy'])
-                sell = self.format_number(data['sell'])
+                price_usd = self.format_number(data['price'])
+                change_24h = data.get('change_24h', 0)
+                change_str = self.format_percentage_compact(change_24h)
+                emoji = self.get_trend_emoji(change_24h)
 
-                lines.append(f"▫️ {symbol} {name}")
-                lines.append(f"   خرید: {buy} تومان")
-                lines.append(f"   فروش: {sell} تومان")
-                lines.append("")
+                lines.append(f"{emoji} {symbol}: ${price_usd} (24h: {change_str})")
 
-        # سکه‌های طلا
+                # قیمت تومانی (اگر موجود باشد)
+                if 'price_toman' in data and data['price_toman'] > 0:
+                    price_toman = self.format_number(data['price_toman'])
+                    lines.append(f"     {price_toman} تومان ({change_str})")
+
+        # 5. سکه‌های طلا
         if prices.get('gold_coins'):
-            lines.append("🪙 سکه‌های طلا:")
             lines.append("")
-
             for coin_id, data in prices['gold_coins'].items():
                 symbol = data['symbol']
                 name = data['name']
                 buy = self.format_number(data['buy'])
-                sell = self.format_number(data['sell'])
+                lines.append(f"{symbol} {name}: {buy} تومان")
 
-                lines.append(f"{symbol} {name}")
-                lines.append(f"   خرید: {buy} تومان")
-                lines.append(f"   فروش: {sell} تومان")
-                lines.append("")
-
-        # آیتم‌های طلا
+        # 6. سایر آیتم‌های طلا (به جز طلای 18 عیار که قبلاً نمایش داده شد)
         if prices.get('gold_items'):
-            lines.append("✨ طلا:")
-            lines.append("")
-
             for item_id, data in prices['gold_items'].items():
+                if item_id != 'gol18':
+                    symbol = data['symbol']
+                    name = data['name']
+                    price = self.format_number(data['price'])
+                    lines.append(f"{symbol} {name}: {price} تومان")
+
+        # 7. ارزهای فیات
+        if prices.get('fiat_currencies'):
+            lines.append("")
+            for currency_id, data in prices['fiat_currencies'].items():
                 symbol = data['symbol']
                 name = data['name']
-                price = self.format_number(data['price'])
-                unit = data['unit']
-
-                lines.append(f"{symbol} {name}")
-                lines.append(f"   قیمت: {price} {unit}")
-                lines.append("")
+                buy = self.format_number(data['buy'])
+                lines.append(f"{symbol} {name}: {buy} تومان")
 
         # زمان به‌روزرسانی
+        lines.append("")
         lines.append("─" * 35)
         now = datetime.now()
         lines.append(f"🕐 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append("")
+        lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
+        lines.append("@arzzalanbot")
 
         return "\n".join(lines)

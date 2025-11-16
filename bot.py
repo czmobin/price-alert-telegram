@@ -1009,6 +1009,11 @@ class ArzalanBot:
 
     async def handle_keyboard_buttons(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """مدیریت دکمه‌های keyboard"""
+        # چک کردن اینکه آیا در حالت انتظار برای دریافت زمان هستیم
+        if context.user_data.get('waiting_for_time'):
+            await self.receive_schedule_time(update, context)
+            return
+
         # چک کردن اینکه آیا در حالت انتظار برای broadcast هستیم
         if context.user_data.get('waiting_for_broadcast'):
             await self.receive_broadcast_message(update, context)
