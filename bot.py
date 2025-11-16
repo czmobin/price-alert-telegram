@@ -59,6 +59,37 @@ class ArzalanBot:
             logger.error(f"خطا در چک عضویت کانال: {e}")
             return True  # در صورت خطا، اجازه ادامه بده
 
+    async def require_membership(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """
+        چک عضویت و نمایش پیام درخواست عضویت در صورت نیاز
+
+        Returns:
+            True اگر کاربر عضو است، False اگر عضو نیست
+        """
+        user_id = update.effective_user.id
+        is_member = await self.check_channel_membership(user_id)
+
+        if not is_member:
+            membership_message = """برای استفاده از دستیار ارزَلان کافیه در کانال اصلی اون عضو بشی.
+خبری از تبلیغات نیست کانال خودمونه."""
+
+            keyboard = [
+                [InlineKeyboardButton("🔗 عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.replace('@', '')}")],
+                [InlineKeyboardButton("✅ عضو شدم", callback_data='check_membership')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # بررسی اینکه آیا از callback آمده یا message
+            if update.callback_query:
+                await update.callback_query.answer("⚠️ ابتدا باید در کانال عضو شوید", show_alert=True)
+                await update.callback_query.edit_message_text(membership_message, reply_markup=reply_markup)
+            else:
+                await update.message.reply_text(membership_message, reply_markup=reply_markup)
+
+            return False
+
+        return True
+
     def get_main_menu_keyboard(self):
         """منوی اصلی با دکمه‌های keyboard"""
         keyboard = [
@@ -157,6 +188,10 @@ class ArzalanBot:
 
     async def send_prices(self, update: Update, context: ContextTypes.DEFAULT_TYPE, is_first_time: bool = False):
         """ارسال قیمت‌ها"""
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
         user_id = update.effective_user.id
 
         # ارسال پیام در حال پردازش
@@ -283,6 +318,11 @@ class ArzalanBot:
     async def refresh_prices_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای به‌روزرسانی قیمت‌ها"""
         query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
         await query.answer("در حال به‌روزرسانی...")
 
         user_id = update.effective_user.id
@@ -296,18 +336,27 @@ class ArzalanBot:
                 include_gold = True
                 include_silver = True
                 include_usd = True
+                fiat_currency_ids = []
+                gold_coin_ids = []
+                gold_item_ids = []
             else:
                 crypto_ids = settings['selected_cryptos']
                 include_gold = bool(settings['include_gold'])
                 include_silver = bool(settings['include_silver'])
                 include_usd = bool(settings['include_usd'])
+                fiat_currency_ids = settings.get('selected_fiat_currencies', [])
+                gold_coin_ids = settings.get('selected_gold_coins', [])
+                gold_item_ids = settings.get('selected_gold_items', [])
 
             # دریافت قیمت‌های جدید
-            prices = price_fetcher.get_all_prices(
+            prices = await price_fetcher.get_all_prices(
                 crypto_ids=crypto_ids,
                 include_gold=include_gold,
                 include_silver=include_silver,
-                include_usd=include_usd
+                include_usd=include_usd,
+                fiat_currency_ids=fiat_currency_ids,
+                gold_coin_ids=gold_coin_ids,
+                gold_item_ids=gold_item_ids
             )
 
             # فرمت کردن پیام
@@ -335,6 +384,11 @@ class ArzalanBot:
     async def select_assets_main_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای انتخاب نوع دارایی"""
         query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
         await query.answer()
 
         message = "چه نوع دارایی می‌خوای اضافه کنی؟"
@@ -741,6 +795,11 @@ class ArzalanBot:
     async def setup_schedule_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای تنظیم زمان‌بندی"""
         query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
         await query.answer()
 
         message = """⏰ تنظیم زمان‌بندی:
@@ -828,6 +887,10 @@ class ArzalanBot:
 
     async def settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """دستور /settings یا دکمه تنظیمات"""
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
         user_id = update.effective_user.id
         settings = db.get_user_settings(user_id)
 
@@ -946,6 +1009,9 @@ class ArzalanBot:
         if text == '📤 ارسال قیمت الان':
             await self.send_prices(update, context)
         elif text == '🕒 تنظیم زمان ارسال روزانه پیام':
+            # چک عضویت کاربر
+            if not await self.require_membership(update, context):
+                return
             # ارسال پیام با دکمه‌های inline
             user = update.effective_user
             await context.bot.send_message(
@@ -984,6 +1050,11 @@ class ArzalanBot:
     async def send_prices_now_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """ارسال قیمت‌ها از طریق callback"""
         query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
         await query.answer("در حال دریافت قیمت‌ها...")
 
         user_id = update.effective_user.id
