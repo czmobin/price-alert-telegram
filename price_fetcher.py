@@ -6,8 +6,8 @@ import asyncio
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from config import (
-    COINGECKO_API, CRYPTO_SYMBOLS, FIAT_CURRENCIES,
-    GOLD_COINS, GOLD_ITEMS
+    COINGECKO_API, CRYPTO_SYMBOLS, BINANCE_SYMBOLS,
+    FIAT_CURRENCIES, GOLD_COINS, GOLD_ITEMS
 )
 from bonbast_monitor import BonbastScraper
 
@@ -44,21 +44,76 @@ class PriceFetcher:
 
     def get_crypto_prices(self, crypto_ids: List[str]) -> Dict[str, Dict]:
         """
-        دریافت قیمت ارزهای دیجیتال از CoinGecko
+        دریافت قیمت ارزهای دیجیتال از Binance API (با fallback به CoinGecko)
 
         Returns:
-            dict: {'bitcoin': {'price': 45000, 'change_7d': 5.2, 'symbol': 'BTC'}, ...}
+            dict: {'bitcoin': {'price': 45000, 'change_24h': 5.2, 'symbol': 'BTC'}, ...}
         """
         try:
-            # تبدیل لیست به رشته جدا شده با کاما
+            result = {}
+
+            # ساخت لیست symbols مورد نیاز
+            symbols_list = []
+            crypto_to_symbol = {}  # برای mapping برعکس
+
+            for crypto_id in crypto_ids:
+                binance_symbol = BINANCE_SYMBOLS.get(crypto_id)
+                if binance_symbol:
+                    symbols_list.append(binance_symbol)
+                    crypto_to_symbol[binance_symbol] = crypto_id
+
+            if not symbols_list:
+                return {}
+
+            # دریافت قیمت‌ها از Binance
+            url = "https://api.binance.com/api/v3/ticker/24hr"
+
+            # برای لیست کوچک، یکی یکی بگیریم (سریعتر و مطمئن‌تر)
+            for binance_symbol in symbols_list:
+                try:
+                    params = {'symbol': binance_symbol}
+                    response = self.session.get(url, params=params, timeout=5)
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        crypto_id = crypto_to_symbol[binance_symbol]
+
+                        price = float(data.get('lastPrice', 0))
+                        change_24h = float(data.get('priceChangePercent', 0))
+
+                        result[crypto_id] = {
+                            'price': price,
+                            'change_24h': change_24h,
+                            'change_7d': 0,  # Binance API تغییرات 7 روزه نداره
+                            'symbol': CRYPTO_SYMBOLS.get(crypto_id, crypto_id.upper())
+                        }
+                except Exception as e:
+                    # اگر یک symbol مشکل داشت، ادامه بده
+                    print(f"خطا در دریافت {binance_symbol}: {e}")
+                    continue
+
+            # اگر نتونستیم از Binance بگیریم، از CoinGecko استفاده کن
+            if not result:
+                print("Binance ناموفق، استفاده از CoinGecko...")
+                return self._get_crypto_prices_coingecko(crypto_ids)
+
+            return result
+
+        except Exception as e:
+            print(f"خطا کلی در دریافت قیمت کریپتو: {e}")
+            # fallback به روش قدیمی با CoinGecko
+            return self._get_crypto_prices_coingecko(crypto_ids)
+
+    def _get_crypto_prices_coingecko(self, crypto_ids: List[str]) -> Dict[str, Dict]:
+        """روش بک‌آپ: دریافت قیمت از CoinGecko"""
+        try:
             ids_string = ','.join(crypto_ids)
 
             url = f"{COINGECKO_API}/simple/price"
             params = {
                 'ids': ids_string,
                 'vs_currencies': 'usd',
-                'include_24hr_change': 'true',
-                'include_7d_change': 'true'
+                'include_24hr_change': 'true'
             }
 
             response = self.session.get(url, params=params, timeout=10)
@@ -72,14 +127,13 @@ class PriceFetcher:
                     result[crypto_id] = {
                         'price': crypto_data.get('usd', 0),
                         'change_24h': crypto_data.get('usd_24h_change', 0),
-                        'change_7d': crypto_data.get('usd_7d_change', 0),
+                        'change_7d': 0,
                         'symbol': CRYPTO_SYMBOLS.get(crypto_id, crypto_id.upper())
                     }
 
             return result
-
         except Exception as e:
-            print(f"خطا در دریافت قیمت کریپتو: {e}")
+            print(f"خطا در دریافت قیمت از CoinGecko: {e}")
             return {}
 
     def get_gold_price(self) -> Optional[Dict]:
@@ -534,12 +588,10 @@ class PriceFetcher:
                 symbol = data['symbol']
                 price = self.format_number(data['price'])
                 change_24h = self.format_percentage(data['change_24h'])
-                change_7d = self.format_percentage(data['change_7d'])
 
                 lines.append(f"▫️ {symbol}")
                 lines.append(f"   قیمت: ${price}")
                 lines.append(f"   تغییر 24h: {change_24h}")
-                lines.append(f"   تغییر 7d: {change_7d}")
                 lines.append("")
 
         # طلا
