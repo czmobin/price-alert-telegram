@@ -233,7 +233,7 @@ class PriceFetcher:
             print(f"خطا در دریافت قیمت نقره: {e}")
             return None
 
-    def get_usd_irr_price(self) -> Optional[Dict]:
+    async def get_usd_irr_price(self) -> Optional[Dict]:
         """
         دریافت قیمت دلار به تومان
 
@@ -283,11 +283,11 @@ class PriceFetcher:
                         }
 
             # روش جایگزین: استفاده از API bonbast (غیررسمی)
-            return self._get_usd_from_bonbast()
+            return await self._get_usd_from_bonbast()
 
         except Exception as e:
             print(f"خطا در دریافت قیمت دلار: {e}")
-            return self._get_usd_from_bonbast()
+            return await self._get_usd_from_bonbast()
 
     async def _get_bonbast_data(self, use_cache: bool = True) -> Optional[Dict]:
         """
@@ -535,7 +535,7 @@ class PriceFetcher:
 
         # دریافت قیمت دلار
         if include_usd:
-            result['usd_irr'] = self.get_usd_irr_price()
+            result['usd_irr'] = await self.get_usd_irr_price()
 
         # دریافت ارزهای فیات
         if fiat_currency_ids:
