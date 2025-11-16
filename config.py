@@ -53,6 +53,30 @@ CRYPTO_SYMBOLS = {
     'cosmos': 'ATOM'
 }
 
+# نقشه crypto ID به symbol بایننس
+BINANCE_SYMBOLS = {
+    'bitcoin': 'BTCUSDT',
+    'ethereum': 'ETHUSDT',
+    'binancecoin': 'BNBUSDT',
+    'cardano': 'ADAUSDT',
+    'ripple': 'XRPUSDT',
+    'solana': 'SOLUSDT',
+    'polkadot': 'DOTUSDT',
+    'dogecoin': 'DOGEUSDT',
+    'tether': 'USDTUSD',
+    'usd-coin': 'USDCUSDT',
+    'litecoin': 'LTCUSDT',
+    'chainlink': 'LINKUSDT',
+    'avalanche-2': 'AVAXUSDT',
+    'tron': 'TRXUSDT',
+    'stellar': 'XLMUSDT',
+    'the-open-network': 'TONUSDT',
+    'uniswap': 'UNIUSDT',
+    'matic-network': 'MATICUSDT',
+    'shiba-inu': 'SHIBUSDT',
+    'cosmos': 'ATOMUSDT'
+}
+
 # منابع قیمت دیگر
 OTHER_ASSETS = ['gold', 'silver', 'usd_irr']
 
