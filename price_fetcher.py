@@ -318,23 +318,10 @@ class PriceFetcher:
             print(f"خطا در دریافت داده از Bonbast: {e}")
             return None
 
-    def _get_bonbast_data_sync(self, use_cache: bool = True) -> Optional[Dict]:
-        """نسخه sync از تابع دریافت داده bonbast"""
-        try:
-            # اجرای async function در sync context
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(self._get_bonbast_data(use_cache))
-            loop.close()
-            return result
-        except Exception as e:
-            print(f"خطا در دریافت داده از Bonbast (sync): {e}")
-            return None
-
-    def _get_usd_from_bonbast(self) -> Optional[Dict]:
+    async def _get_usd_from_bonbast(self) -> Optional[Dict]:
         """دریافت قیمت دلار از Bonbast (روش جایگزین)"""
         try:
-            bonbast_data = self._get_bonbast_data_sync()
+            bonbast_data = await self._get_bonbast_data()
 
             if bonbast_data and 'currencies' in bonbast_data:
                 usd_data = bonbast_data['currencies'].get('usd')
@@ -412,7 +399,7 @@ class PriceFetcher:
                 'symbol': '💵'
             }
 
-    def get_fiat_currencies(self, currency_ids: List[str]) -> Dict[str, Dict]:
+    async def get_fiat_currencies(self, currency_ids: List[str]) -> Dict[str, Dict]:
         """
         دریافت قیمت ارزهای فیات از bonbast
 
@@ -420,7 +407,7 @@ class PriceFetcher:
             dict: {'usd': {'name': '...', 'buy': 112850, 'sell': 112750}, ...}
         """
         try:
-            bonbast_data = self._get_bonbast_data_sync()
+            bonbast_data = await self._get_bonbast_data()
 
             if not bonbast_data or 'currencies' not in bonbast_data:
                 return {}
@@ -442,7 +429,7 @@ class PriceFetcher:
             print(f"خطا در دریافت ارزهای فیات: {e}")
             return {}
 
-    def get_gold_coins(self, coin_ids: List[str]) -> Dict[str, Dict]:
+    async def get_gold_coins(self, coin_ids: List[str]) -> Dict[str, Dict]:
         """
         دریافت قیمت سکه‌های طلا از bonbast
 
@@ -450,7 +437,7 @@ class PriceFetcher:
             dict: {'azadi1': {'name': '...', 'buy': 111600000, 'sell': 109800000}, ...}
         """
         try:
-            bonbast_data = self._get_bonbast_data_sync()
+            bonbast_data = await self._get_bonbast_data()
 
             if not bonbast_data or 'coins' not in bonbast_data:
                 return {}
@@ -472,7 +459,7 @@ class PriceFetcher:
             print(f"خطا در دریافت سکه‌های طلا: {e}")
             return {}
 
-    def get_gold_items(self, item_ids: List[str]) -> Dict[str, Dict]:
+    async def get_gold_items(self, item_ids: List[str]) -> Dict[str, Dict]:
         """
         دریافت قیمت آیتم‌های طلا از bonbast
 
@@ -480,7 +467,7 @@ class PriceFetcher:
             dict: {'gol18': {'name': '...', 'price': 11306847}, ...}
         """
         try:
-            bonbast_data = self._get_bonbast_data_sync()
+            bonbast_data = await self._get_bonbast_data()
 
             if not bonbast_data or 'gold' not in bonbast_data:
                 return {}
@@ -502,7 +489,7 @@ class PriceFetcher:
             print(f"خطا در دریافت آیتم‌های طلا: {e}")
             return {}
 
-    def get_all_prices(self, crypto_ids: List[str] = None,
+    async def get_all_prices(self, crypto_ids: List[str] = None,
                       include_gold: bool = True,
                       include_silver: bool = True,
                       include_usd: bool = True,
@@ -552,15 +539,15 @@ class PriceFetcher:
 
         # دریافت ارزهای فیات
         if fiat_currency_ids:
-            result['fiat_currencies'] = self.get_fiat_currencies(fiat_currency_ids)
+            result['fiat_currencies'] = await self.get_fiat_currencies(fiat_currency_ids)
 
         # دریافت سکه‌های طلا
         if gold_coin_ids:
-            result['gold_coins'] = self.get_gold_coins(gold_coin_ids)
+            result['gold_coins'] = await self.get_gold_coins(gold_coin_ids)
 
         # دریافت آیتم‌های طلا
         if gold_item_ids:
-            result['gold_items'] = self.get_gold_items(gold_item_ids)
+            result['gold_items'] = await self.get_gold_items(gold_item_ids)
 
         return result
 
