@@ -50,6 +50,10 @@ class ArzalanBot:
     def __init__(self):
         self.application = None
 
+    async def is_admin(self, user_id: int) -> bool:
+        """چک کردن ادمین بودن کاربر"""
+        return db.is_admin(user_id)
+
     async def check_channel_membership(self, user_id: int) -> bool:
         """چک کردن عضویت کاربر در کانال"""
         try:
@@ -1230,6 +1234,292 @@ class ArzalanBot:
         except Exception as e:
             logger.error(f"خطا در بارگذاری زمان‌بندی‌ها: {e}")
 
+    # توابع پنل ادمین
+
+    async def admin_panel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دستور /admin - نمایش پنل ادمین"""
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await update.message.reply_text("⛔️ شما دسترسی به پنل ادمین ندارید.")
+            return
+
+        await self.show_admin_panel(update, context)
+
+    async def show_admin_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش پنل ادمین"""
+        message = """🔐 پنل مدیریت ربات ارزَلان
+
+به پنل مدیریت خوش آمدید!"""
+
+        keyboard = [
+            [InlineKeyboardButton("📊 آمار کلی", callback_data='admin_stats_general')],
+            [InlineKeyboardButton("👥 آمار کاربران", callback_data='admin_stats_users')],
+            [InlineKeyboardButton("📨 آمار پیام‌ها", callback_data='admin_stats_messages')],
+            [InlineKeyboardButton("🔥 محبوب‌ترین ارزها", callback_data='admin_stats_popular_cryptos')],
+            [InlineKeyboardButton("📈 فعالیت کاربران", callback_data='admin_stats_activity')],
+            [InlineKeyboardButton("👤 کاربران اخیر", callback_data='admin_recent_users')],
+            [InlineKeyboardButton("🔙 بستن پنل", callback_data='admin_close')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(message, reply_markup=reply_markup)
+
+    async def admin_stats_general_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش آمار کلی"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت آمار
+        total_users = db.get_total_users_count()
+        active_users = db.get_active_users_count()
+        new_users_7d = db.get_new_users_count(7)
+        new_users_30d = db.get_new_users_count(30)
+        total_messages = db.get_total_messages_count()
+        active_notifications = db.get_active_notifications_count()
+
+        message = f"""📊 آمار کلی ربات
+
+👥 کاربران:
+• کل کاربران: {total_users:,}
+• کاربران فعال: {active_users:,}
+• کاربران جدید (7 روز): {new_users_7d:,}
+• کاربران جدید (30 روز): {new_users_30d:,}
+
+📨 پیام‌ها:
+• کل پیام‌ها: {total_messages:,}
+
+🔔 اعلان‌ها:
+• کاربران با اعلان فعال: {active_notifications:,}"""
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='admin_stats_general')],
+            [InlineKeyboardButton("🔙 بازگشت به پنل", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def admin_stats_users_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش آمار کاربران"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت آمار
+        total_users = db.get_total_users_count()
+        active_users = db.get_active_users_count()
+        inactive_users = total_users - active_users
+        new_users_24h = db.get_new_users_count(1)
+        new_users_7d = db.get_new_users_count(7)
+        new_users_30d = db.get_new_users_count(30)
+
+        message = f"""👥 آمار تفصیلی کاربران
+
+📈 تعداد کاربران:
+• کل کاربران: {total_users:,}
+• کاربران فعال: {active_users:,}
+• کاربران غیرفعال: {inactive_users:,}
+
+🆕 کاربران جدید:
+• امروز (24 ساعت): {new_users_24h:,}
+• 7 روز اخیر: {new_users_7d:,}
+• 30 روز اخیر: {new_users_30d:,}
+
+📊 نرخ رشد:
+• هفتگی: {new_users_7d:,} کاربر جدید
+• ماهانه: {new_users_30d:,} کاربر جدید"""
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='admin_stats_users')],
+            [InlineKeyboardButton("🔙 بازگشت به پنل", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def admin_stats_messages_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش آمار پیام‌ها"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت آمار
+        total_messages = db.get_total_messages_count()
+        messages_by_type = db.get_messages_by_type()
+
+        message = f"""📨 آمار پیام‌ها
+
+📊 کل پیام‌ها: {total_messages:,}
+
+📋 تفکیک بر اساس نوع:"""
+
+        # نمایش پیام‌ها بر اساس نوع
+        type_names = {
+            'price_request': '📤 درخواست قیمت',
+            'scheduled_notification': '🔔 اعلان زمان‌بندی شده',
+            'refresh': '🔄 به‌روزرسانی',
+            'start': '▶️ شروع'
+        }
+
+        for msg_type, count in messages_by_type.items():
+            type_display = type_names.get(msg_type, msg_type)
+            message += f"\n• {type_display}: {count:,}"
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='admin_stats_messages')],
+            [InlineKeyboardButton("🔙 بازگشت به پنل", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def admin_stats_popular_cryptos_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش محبوب‌ترین ارزها"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت محبوب‌ترین ارزها
+        popular_cryptos = db.get_popular_cryptos(limit=10)
+
+        message = """🔥 محبوب‌ترین ارزهای انتخاب شده
+
+ارزهایی که کاربران بیشتر انتخاب کرده‌اند:
+
+"""
+
+        if popular_cryptos:
+            for i, (crypto_id, count) in enumerate(popular_cryptos.items(), 1):
+                crypto_symbol = CRYPTO_SYMBOLS.get(crypto_id, crypto_id.upper())
+                message += f"{i}. {crypto_symbol}: {count:,} کاربر\n"
+        else:
+            message += "هنوز آماری ثبت نشده است."
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='admin_stats_popular_cryptos')],
+            [InlineKeyboardButton("🔙 بازگشت به پنل", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def admin_stats_activity_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش آمار فعالیت کاربران"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت آمار فعالیت
+        activity_stats = db.get_user_activity_stats()
+
+        message = f"""📈 آمار فعالیت کاربران
+
+👤 کاربران فعال:
+• 24 ساعت اخیر: {activity_stats.get('active_24h', 0):,}
+• 7 روز اخیر: {activity_stats.get('active_7d', 0):,}
+• 30 روز اخیر: {activity_stats.get('active_30d', 0):,}
+
+این آمار بر اساس تعداد کاربرانی که در بازه‌های زمانی مشخص شده با ربات تعامل داشته‌اند محاسبه شده است."""
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='admin_stats_activity')],
+            [InlineKeyboardButton("🔙 بازگشت به پنل", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def admin_recent_users_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش کاربران اخیر"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت کاربران اخیر
+        recent_users = db.get_recent_users(limit=10)
+
+        message = """👤 کاربران اخیر (10 نفر آخر)
+
+"""
+
+        if recent_users:
+            for i, user in enumerate(recent_users, 1):
+                username = f"@{user['username']}" if user.get('username') else "بدون یوزرنیم"
+                first_name = user.get('first_name', 'نامشخص')
+                created_at = user.get('created_at', '')[:10]  # فقط تاریخ
+                message += f"{i}. {first_name} ({username})\n   📅 {created_at}\n\n"
+        else:
+            message += "هنوز کاربری ثبت نشده است."
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='admin_recent_users')],
+            [InlineKeyboardButton("🔙 بازگشت به پنل", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def admin_panel_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """بازگشت به پنل ادمین"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+        await self.show_admin_panel(update, context)
+
+    async def admin_close_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """بستن پنل ادمین"""
+        query = update.callback_query
+        await query.answer()
+        await query.edit_message_text("✅ پنل ادمین بسته شد.")
+
     async def run(self):
         """اجرای ربات"""
         # ساخت Application
@@ -1239,6 +1529,7 @@ class ArzalanBot:
         self.application.add_handler(CommandHandler('start', self.start_command))
         self.application.add_handler(CommandHandler('help', self.help_command))
         self.application.add_handler(CommandHandler('settings', self.settings_command))
+        self.application.add_handler(CommandHandler('admin', self.admin_panel_command))
 
         # Callback handlers
         self.application.add_handler(CallbackQueryHandler(
@@ -1315,6 +1606,32 @@ class ArzalanBot:
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.send_prices_now_callback, pattern='^send_prices_now$'
+        ))
+
+        # Callback handlers برای پنل ادمین
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_panel_callback, pattern='^admin_panel$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_stats_general_callback, pattern='^admin_stats_general$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_stats_users_callback, pattern='^admin_stats_users$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_stats_messages_callback, pattern='^admin_stats_messages$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_stats_popular_cryptos_callback, pattern='^admin_stats_popular_cryptos$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_stats_activity_callback, pattern='^admin_stats_activity$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_recent_users_callback, pattern='^admin_recent_users$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_close_callback, pattern='^admin_close$'
         ))
 
         # Handler برای دکمه‌های keyboard

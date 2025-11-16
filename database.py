@@ -75,6 +75,16 @@ class Database:
             )
         ''')
 
+        # جدول ادمین‌ها
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS admins (
+                user_id INTEGER PRIMARY KEY,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                added_by INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -369,3 +379,242 @@ class Database:
         except Exception as e:
             print(f"خطا در شمارش کاربران: {e}")
             return 0
+
+    # توابع مدیریت ادمین‌ها
+
+    def is_admin(self, user_id: int) -> bool:
+        """چک کردن ادمین بودن کاربر"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT user_id FROM admins WHERE user_id = ?', (user_id,))
+            result = cursor.fetchone()
+
+            conn.close()
+            return result is not None
+        except Exception as e:
+            print(f"خطا در چک ادمین: {e}")
+            return False
+
+    def add_admin(self, user_id: int, added_by: int = None) -> bool:
+        """افزودن ادمین"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT OR IGNORE INTO admins (user_id, added_by)
+                VALUES (?, ?)
+            ''', (user_id, added_by))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در افزودن ادمین: {e}")
+            return False
+
+    def remove_admin(self, user_id: int) -> bool:
+        """حذف ادمین"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('DELETE FROM admins WHERE user_id = ?', (user_id,))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در حذف ادمین: {e}")
+            return False
+
+    def get_admins(self) -> List[int]:
+        """دریافت لیست ادمین‌ها"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT user_id FROM admins')
+            admins = [row['user_id'] for row in cursor.fetchall()]
+
+            conn.close()
+            return admins
+        except Exception as e:
+            print(f"خطا در دریافت ادمین‌ها: {e}")
+            return []
+
+    # توابع آماری
+
+    def get_total_users_count(self) -> int:
+        """تعداد کل کاربران"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT COUNT(*) as count FROM users')
+            count = cursor.fetchone()['count']
+
+            conn.close()
+            return count
+        except Exception as e:
+            print(f"خطا در شمارش کاربران: {e}")
+            return 0
+
+    def get_new_users_count(self, days: int = 7) -> int:
+        """تعداد کاربران جدید در n روز اخیر"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM users
+                WHERE created_at >= datetime('now', '-' || ? || ' days')
+            ''', (days,))
+            count = cursor.fetchone()['count']
+
+            conn.close()
+            return count
+        except Exception as e:
+            print(f"خطا در شمارش کاربران جدید: {e}")
+            return 0
+
+    def get_total_messages_count(self) -> int:
+        """تعداد کل پیام‌ها"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT COUNT(*) as count FROM message_history')
+            count = cursor.fetchone()['count']
+
+            conn.close()
+            return count
+        except Exception as e:
+            print(f"خطا در شمارش پیام‌ها: {e}")
+            return 0
+
+    def get_messages_by_type(self) -> Dict[str, int]:
+        """تعداد پیام‌ها بر اساس نوع"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT message_type, COUNT(*) as count
+                FROM message_history
+                GROUP BY message_type
+            ''')
+
+            messages = {row['message_type']: row['count'] for row in cursor.fetchall()}
+
+            conn.close()
+            return messages
+        except Exception as e:
+            print(f"خطا در دریافت آمار پیام‌ها: {e}")
+            return {}
+
+    def get_active_notifications_count(self) -> int:
+        """تعداد کاربران با نوتیفیکیشن فعال"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM user_settings
+                WHERE notification_enabled = 1
+            ''')
+            count = cursor.fetchone()['count']
+
+            conn.close()
+            return count
+        except Exception as e:
+            print(f"خطا در شمارش نوتیفیکیشن‌ها: {e}")
+            return 0
+
+    def get_popular_cryptos(self, limit: int = 10) -> Dict[str, int]:
+        """محبوب‌ترین ارزهای انتخاب شده"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT selected_cryptos FROM user_settings')
+            rows = cursor.fetchall()
+
+            conn.close()
+
+            # شمارش ارزها
+            crypto_counts = {}
+            for row in rows:
+                if row['selected_cryptos']:
+                    cryptos = json.loads(row['selected_cryptos'])
+                    for crypto in cryptos:
+                        crypto_counts[crypto] = crypto_counts.get(crypto, 0) + 1
+
+            # مرتب‌سازی و محدود کردن
+            sorted_cryptos = dict(sorted(crypto_counts.items(), key=lambda x: x[1], reverse=True)[:limit])
+
+            return sorted_cryptos
+        except Exception as e:
+            print(f"خطا در دریافت ارزهای محبوب: {e}")
+            return {}
+
+    def get_recent_users(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """کاربران اخیر"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT user_id, username, first_name, created_at
+                FROM users
+                ORDER BY created_at DESC
+                LIMIT ?
+            ''', (limit,))
+
+            users = [dict(row) for row in cursor.fetchall()]
+
+            conn.close()
+            return users
+        except Exception as e:
+            print(f"خطا در دریافت کاربران اخیر: {e}")
+            return []
+
+    def get_user_activity_stats(self) -> Dict[str, int]:
+        """آمار فعالیت کاربران"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            # کاربران فعال در 24 ساعت اخیر
+            cursor.execute('''
+                SELECT COUNT(DISTINCT user_id) as count FROM message_history
+                WHERE sent_at >= datetime('now', '-1 day')
+            ''')
+            active_24h = cursor.fetchone()['count']
+
+            # کاربران فعال در 7 روز اخیر
+            cursor.execute('''
+                SELECT COUNT(DISTINCT user_id) as count FROM message_history
+                WHERE sent_at >= datetime('now', '-7 days')
+            ''')
+            active_7d = cursor.fetchone()['count']
+
+            # کاربران فعال در 30 روز اخیر
+            cursor.execute('''
+                SELECT COUNT(DISTINCT user_id) as count FROM message_history
+                WHERE sent_at >= datetime('now', '-30 days')
+            ''')
+            active_30d = cursor.fetchone()['count']
+
+            conn.close()
+
+            return {
+                'active_24h': active_24h,
+                'active_7d': active_7d,
+                'active_30d': active_30d
+            }
+        except Exception as e:
+            print(f"خطا در دریافت آمار فعالیت: {e}")
+            return {}
