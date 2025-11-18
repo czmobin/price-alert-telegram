@@ -327,11 +327,17 @@ class PriceFetcher:
                     'unit': 'USD/oz',
                     'symbol': '🥈'
                 }
-            return None
+            return {
+                'error': True,
+                'message': 'قیمت نقره در دسترس نیست'
+            }
 
         except Exception as e:
             print(f"خطا در دریافت قیمت نقره: {e}")
-            return None
+            return {
+                'error': True,
+                'message': 'خطا در دریافت قیمت نقره'
+            }
 
     async def get_usd_irr_price(self) -> Optional[Dict]:
         """
@@ -439,7 +445,16 @@ class PriceFetcher:
 
         except Exception as e:
             print(f"خطا در دریافت دلار از Bonbast: {e}")
-            return self._get_usd_from_tgju()
+            result = self._get_usd_from_tgju()
+            if result and 'error' in result:
+                # اگر همه API ها فیل شدند، پیام راهنما اضافه کن
+                result['help_message'] = """⚠️ خطا در دریافت قیمت دلار
+
+لطفاً:
+1. اگر مرورگر Bonbast باز است، آن را ببندید و دوباره باز کنید
+2. روی دکمه "🔄 تلاش مجدد" کلیک کنید
+3. در صورت تکرار خطا، چند دقیقه دیگر امتحان کنید"""
+            return result
 
     def _get_usd_from_tgju(self) -> Optional[Dict]:
         """دریافت قیمت دلار از tgju (روش بک‌آپ دوم)"""
@@ -478,25 +493,30 @@ class PriceFetcher:
                             'symbol': '💵'
                         }
 
-            # اگر همه API ها فیل شدند، یک قیمت ثابت موقت برگردون
-            print("تمام API های دلار فیل شدند، استفاده از قیمت تخمینی")
+            # اگر همه API ها فیل شدند
+            print("تمام API های دلار فیل شدند")
             return {
-                'price': 700000,  # قیمت تخمینی
-                'change_24h': 0,
-                'change_7d': 0,
-                'unit': 'تومان (تخمینی)',
-                'symbol': '💵'
+                'error': True,
+                'message': 'خطا در دریافت قیمت دلار',
+                'help_message': """⚠️ خطا در دریافت قیمت دلار
+
+لطفاً:
+1. اگر مرورگر Bonbast باز است، آن را ببندید و دوباره باز کنید
+2. روی دکمه "🔄 تلاش مجدد" کلیک کنید
+3. در صورت تکرار خطا، چند دقیقه دیگر امتحان کنید"""
             }
 
         except Exception as e:
             print(f"خطا در دریافت دلار از tgju: {e}")
-            # قیمت پیش‌فرض در صورت خطا
             return {
-                'price': 700000,
-                'change_24h': 0,
-                'change_7d': 0,
-                'unit': 'تومان (تخمینی)',
-                'symbol': '💵'
+                'error': True,
+                'message': 'خطا در دریافت قیمت دلار',
+                'help_message': """⚠️ خطا در دریافت قیمت دلار
+
+لطفاً:
+1. اگر مرورگر Bonbast باز است، آن را ببندید و دوباره باز کنید
+2. روی دکمه "🔄 تلاش مجدد" کلیک کنید
+3. در صورت تکرار خطا، چند دقیقه دیگر امتحان کنید"""
             }
 
     async def get_fiat_currencies(self, currency_ids: List[str]) -> Dict[str, Dict]:
@@ -660,7 +680,7 @@ class PriceFetcher:
 
         return result
 
-    def format_price_message(self, prices: Dict) -> str:
+    def format_price_message(self, prices: Dict) -> tuple[str, bool]:
         """
         فرمت کردن قیمت‌ها به صورت پیام تلگرام (فرمت فشرده)
 
@@ -668,16 +688,25 @@ class PriceFetcher:
             prices: خروجی تابع get_all_prices
 
         Returns:
-            str: پیام فرمت شده
+            tuple: (پیام فرمت شده, آیا خطا وجود دارد؟)
         """
         lines = []
+        has_error = False
+        error_messages = []
+
         lines.append("گزارش قیمت‌های لحظه‌ای با ارزَلان:")
         lines.append("")
 
         # 1. دلار آمریکا
         if prices.get('usd_irr'):
             usd = prices['usd_irr']
-            lines.append(f"{usd['symbol']} دلار: {self.format_number(usd['price'])} تومان")
+            if usd.get('error'):
+                has_error = True
+                lines.append(f"❌ دلار: {usd.get('message', 'خطا در دریافت')}")
+                if 'help_message' in usd:
+                    error_messages.append(usd['help_message'])
+            else:
+                lines.append(f"{usd['symbol']} دلار: {self.format_number(usd['price'])} تومان")
 
         # 2. طلای 18 عیار (از آیتم‌های طلا)
         if prices.get('gold_items'):
@@ -688,9 +717,13 @@ class PriceFetcher:
         # 3. نقره
         if prices.get('silver') and prices['silver'] is not None:
             silver = prices['silver']
-            change = self.format_percentage_compact(silver.get('change_24h', 0))
-            emoji = self.get_trend_emoji(silver.get('change_24h', 0))
-            lines.append(f"{emoji} نقره: ${self.format_number(silver['price'])} (24h: {change})")
+            if silver.get('error'):
+                has_error = True
+                lines.append(f"❌ نقره: {silver.get('message', 'خطا در دریافت')}")
+            else:
+                change = self.format_percentage_compact(silver.get('change_24h', 0))
+                emoji = self.get_trend_emoji(silver.get('change_24h', 0))
+                lines.append(f"{emoji} نقره: ${self.format_number(silver['price'])} (24h: {change})")
 
         lines.append("")
 
@@ -740,6 +773,14 @@ class PriceFetcher:
                 buy = self.format_number(data['buy'])
                 lines.append(f"{symbol} {name}: {buy} تومان")
 
+        # اضافه کردن پیام‌های راهنما در صورت وجود خطا
+        if error_messages:
+            lines.append("")
+            lines.append("─" * 35)
+            for msg in error_messages:
+                lines.append("")
+                lines.append(msg)
+
         # زمان به‌روزرسانی
         lines.append("")
         lines.append("─" * 35)
@@ -749,4 +790,4 @@ class PriceFetcher:
         lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
         lines.append("@arzzalanbot")
 
-        return "\n".join(lines)
+        return "\n".join(lines), has_error

@@ -235,16 +235,25 @@ class ArzalanBot:
             )
 
             # فرمت کردن پیام
-            message = price_fetcher.format_price_message(prices)
+            message, has_error = price_fetcher.format_price_message(prices)
 
             # ایجاد دکمه‌های inline
-            keyboard = [
-                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
-                [
-                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
-                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+            if has_error:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 تلاش مجدد", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
                 ]
-            ]
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
+                ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # حذف پیام پردازش و ارسال پیام اصلی
@@ -295,16 +304,25 @@ class ArzalanBot:
             )
 
             # فرمت کردن پیام
-            message = price_fetcher.format_price_message(prices)
+            message, has_error = price_fetcher.format_price_message(prices)
 
             # ایجاد دکمه‌های inline
-            keyboard = [
-                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
-                [
-                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
-                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+            if has_error:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 تلاش مجدد", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
                 ]
-            ]
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
+                ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # ارسال پیام
@@ -365,16 +383,25 @@ class ArzalanBot:
             )
 
             # فرمت کردن پیام
-            message = price_fetcher.format_price_message(prices)
+            message, has_error = price_fetcher.format_price_message(prices)
 
             # ایجاد دکمه‌های inline
-            keyboard = [
-                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
-                [
-                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
-                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+            if has_error:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 تلاش مجدد", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
                 ]
-            ]
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
+                ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # به‌روزرسانی پیام
@@ -1331,13 +1358,18 @@ class ArzalanBot:
                     )
 
                     # فرمت کردن پیام
-                    message = "📊 گزارش روزانه شما:\n\n"
-                    message += price_fetcher.format_price_message(prices)
+                    formatted_message, has_error = price_fetcher.format_price_message(prices)
+                    message = "📊 گزارش روزانه شما:\n\n" + formatted_message
 
                     # ایجاد دکمه‌های inline
-                    keyboard = [
-                        [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
-                    ]
+                    if has_error:
+                        keyboard = [
+                            [InlineKeyboardButton("🔄 تلاش مجدد", callback_data='refresh_prices')],
+                        ]
+                    else:
+                        keyboard = [
+                            [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                        ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
 
                     # ارسال پیام
