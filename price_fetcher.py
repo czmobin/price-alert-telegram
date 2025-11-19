@@ -433,7 +433,7 @@ class PriceFetcher:
                 usd_data = bonbast_data['currencies'].get('usd')
                 if usd_data:
                     return {
-                        'price': usd_data['sell'],
+                        'price': usd_data['buy'],  # قیمت خرید (نه فروش)
                         'change_24h': 0,
                         'change_7d': 0,
                         'unit': 'تومان',
@@ -770,10 +770,9 @@ class PriceFetcher:
         if prices.get('fiat_currencies'):
             lines.append("")
             for currency_id, data in prices['fiat_currencies'].items():
-                symbol = data['symbol']
                 name = data['name']
                 buy = self.format_number(data['buy'])
-                lines.append(f"{symbol} {name}: {buy} تومان")
+                lines.append(f"{name}: {buy} تومان")
 
         # اضافه کردن پیام‌های راهنما در صورت وجود خطا
         if error_messages:
