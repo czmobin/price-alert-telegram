@@ -42,6 +42,10 @@ class PriceFetcher:
         else:
             return f"{number:.8f}"
 
+    def format_number_no_decimal(self, number: float) -> str:
+        """فرمت کردن اعداد بدون اعشار (برای تومان، سکه، ارزهای فیات)"""
+        return f"{int(number):,}"
+
     def format_percentage(self, percentage: float) -> str:
         """فرمت کردن درصد تغییرات"""
         if percentage > 0:
@@ -679,7 +683,7 @@ class PriceFetcher:
         # 1. دلار آمریکا
         if prices.get('usd_irr'):
             usd = prices['usd_irr']
-            lines.append(f"{usd['symbol']} دلار: {self.format_number(usd['price'])} تومان")
+            lines.append(f"{usd['symbol']} دلار: {self.format_number_no_decimal(usd['price'])}")
         else:
             has_error = True
 
@@ -687,7 +691,7 @@ class PriceFetcher:
         if prices.get('gold_items'):
             for item_id, data in prices['gold_items'].items():
                 if item_id == 'gol18':
-                    lines.append(f"{data['symbol']} {data['name']}: {self.format_number(data['price'])} تومان")
+                    lines.append(f"{data['symbol']} {data['name']}: {self.format_number_no_decimal(data['price'])}")
 
         # 3. نقره
         if prices.get('silver') and prices['silver'] is not None:
@@ -707,15 +711,17 @@ class PriceFetcher:
                 change_str = self.format_percentage_compact(change_24h)
                 emoji = self.get_trend_emoji(change_24h)
 
-                # قیمت تومانی (اگر موجود باشد)
+                # خط اول: قیمت دلاری
+                lines.append(f"{emoji} {symbol} USDT: ${price_usd} (24h: {change_str})")
+
+                # خط دوم: قیمت تومانی (اگر موجود باشد)
                 if 'price_toman' in data and data.get('price_toman') and data['price_toman'] > 0:
-                    price_toman = self.format_number(data['price_toman'])
-                    # استفاده از تغییرات تومانی اگر موجود بود، در غیر این صورت از تغییرات دلاری استفاده کن
+                    price_toman = self.format_number_no_decimal(data['price_toman'])
+                    # استفاده از تغییرات تومانی اگر موجود بود
                     change_24h_toman = data.get('change_24h_toman', change_24h)
                     change_toman_str = self.format_percentage_compact(change_24h_toman)
-                    lines.append(f"{emoji} {symbol}: ${price_usd} | {price_toman} تومان (24h: {change_str} | {change_toman_str})")
-                else:
-                    lines.append(f"{emoji} {symbol}: ${price_usd} (24h: {change_str})")
+                    emoji_toman = self.get_trend_emoji(change_24h_toman)
+                    lines.append(f"{emoji_toman} {symbol} IRT: {price_toman} (24h: {change_toman_str})")
 
         # 5. سکه‌های طلا
         if prices.get('gold_coins'):
@@ -723,8 +729,8 @@ class PriceFetcher:
             for coin_id, data in prices['gold_coins'].items():
                 symbol = data['symbol']
                 name = data['name']
-                buy = self.format_number(data['buy'])
-                lines.append(f"{symbol} {name}: {buy} تومان")
+                buy = self.format_number_no_decimal(data['buy'])
+                lines.append(f"{symbol} {name}: {buy}")
 
         # 6. سایر آیتم‌های طلا (به جز طلای 18 عیار که قبلاً نمایش داده شد)
         if prices.get('gold_items'):
@@ -732,16 +738,16 @@ class PriceFetcher:
                 if item_id != 'gol18':
                     symbol = data['symbol']
                     name = data['name']
-                    price = self.format_number(data['price'])
-                    lines.append(f"{symbol} {name}: {price} تومان")
+                    price = self.format_number_no_decimal(data['price'])
+                    lines.append(f"{symbol} {name}: {price}")
 
         # 7. ارزهای فیات
         if prices.get('fiat_currencies'):
             lines.append("")
             for currency_id, data in prices['fiat_currencies'].items():
                 name = data['name']
-                buy = self.format_number(data['buy'])
-                lines.append(f"{name}: {buy} تومان")
+                buy = self.format_number_no_decimal(data['buy'])
+                lines.append(f"{name}: {buy}")
 
         # زمان به‌روزرسانی
         lines.append("")
