@@ -660,7 +660,7 @@ class PriceFetcher:
 
         return result
 
-    def format_price_message(self, prices: Dict) -> str:
+    def format_price_message(self, prices: Dict) -> tuple:
         """
         فرمت کردن قیمت‌ها به صورت پیام تلگرام (فرمت فشرده)
 
@@ -668,16 +668,20 @@ class PriceFetcher:
             prices: خروجی تابع get_all_prices
 
         Returns:
-            str: پیام فرمت شده
+            tuple: (پیام فرمت شده, آیا خطایی وجود داشته)
         """
         lines = []
         lines.append("گزارش قیمت‌های لحظه‌ای با ارزَلان:")
         lines.append("")
 
+        has_error = False
+
         # 1. دلار آمریکا
         if prices.get('usd_irr'):
             usd = prices['usd_irr']
             lines.append(f"{usd['symbol']} دلار: {self.format_number(usd['price'])} تومان")
+        else:
+            has_error = True
 
         # 2. طلای 18 عیار (از آیتم‌های طلا)
         if prices.get('gold_items'):
@@ -749,4 +753,8 @@ class PriceFetcher:
         lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
         lines.append("@arzzalanbot")
 
-        return "\n".join(lines)
+        # بررسی اینکه آیا اصلا داده‌ای داریم یا نه
+        if not prices.get('cryptos') and not prices.get('usd_irr') and not prices.get('gold_items'):
+            has_error = True
+
+        return "\n".join(lines), has_error
