@@ -709,12 +709,9 @@ class PriceFetcher:
                     # استفاده از تغییرات تومانی اگر موجود بود، در غیر این صورت از تغییرات دلاری استفاده کن
                     change_24h_toman = data.get('change_24h_toman', change_24h)
                     change_toman_str = self.format_percentage_compact(change_24h_toman)
-                    lines.append(f"{emoji} {symbol}: ${price_usd} (24h: {change_str})")
-                    lines.append(f"{emoji} {symbol} IRT: {price_toman} (24h: {change_toman_str})")
+                    lines.append(f"{emoji} {symbol}: ${price_usd} | {price_toman} تومان (24h: {change_str} | {change_toman_str})")
                 else:
                     lines.append(f"{emoji} {symbol}: ${price_usd} (24h: {change_str})")
-                    emoji_toman = self.get_trend_emoji(change_24h_toman)
-                    lines.append(f"{emoji_toman} {symbol} IRT: {price_toman} (24h: {change_toman_str})")
 
         # 5. سکه‌های طلا
         if prices.get('gold_coins'):
