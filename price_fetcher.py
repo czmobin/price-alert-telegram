@@ -739,10 +739,9 @@ class PriceFetcher:
         if prices.get('fiat_currencies'):
             lines.append("")
             for currency_id, data in prices['fiat_currencies'].items():
-                symbol = data['symbol']
                 name = data['name']
                 buy = self.format_number(data['buy'])
-                lines.append(f"{symbol} {name}: {buy} تومان")
+                lines.append(f"{name}: {buy} تومان")
 
         # زمان به‌روزرسانی
         lines.append("")
