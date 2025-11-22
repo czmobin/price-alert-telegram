@@ -235,16 +235,25 @@ class ArzalanBot:
             )
 
             # فرمت کردن پیام
-            message = price_fetcher.format_price_message(prices)
+            message, has_error = price_fetcher.format_price_message(prices)
 
             # ایجاد دکمه‌های inline
-            keyboard = [
-                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
-                [
-                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
-                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+            if has_error:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 تلاش مجدد", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
                 ]
-            ]
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
+                ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # حذف پیام پردازش و ارسال پیام اصلی
@@ -295,16 +304,25 @@ class ArzalanBot:
             )
 
             # فرمت کردن پیام
-            message = price_fetcher.format_price_message(prices)
+            message, has_error = price_fetcher.format_price_message(prices)
 
             # ایجاد دکمه‌های inline
-            keyboard = [
-                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
-                [
-                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
-                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+            if has_error:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 تلاش مجدد", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
                 ]
-            ]
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
+                ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # ارسال پیام
@@ -365,16 +383,25 @@ class ArzalanBot:
             )
 
             # فرمت کردن پیام
-            message = price_fetcher.format_price_message(prices)
+            message, has_error = price_fetcher.format_price_message(prices)
 
             # ایجاد دکمه‌های inline
-            keyboard = [
-                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
-                [
-                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
-                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+            if has_error:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 تلاش مجدد", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
                 ]
-            ]
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
+                ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # به‌روزرسانی پیام
@@ -798,7 +825,7 @@ class ArzalanBot:
         await self.asset_type_gold_items_callback(update, context)
 
     async def setup_schedule_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """callback برای تنظیم زمان‌بندی"""
+        """callback برای تنظیم زمان‌بندی (نمایش لیست تایم‌های فعلی)"""
         query = update.callback_query
 
         # چک عضویت کاربر
@@ -807,7 +834,44 @@ class ArzalanBot:
 
         await query.answer()
 
-        message = """⏰ تنظیم زمان‌بندی:
+        user_id = update.effective_user.id
+
+        # دریافت لیست زمان‌بندی‌های فعلی
+        schedules = db.get_user_schedules(user_id)
+
+        message = """⏰ مدیریت زمان‌بندی ارسال پیام
+
+"""
+
+        if schedules:
+            message += "زمان‌های فعلی:\n\n"
+            for schedule in schedules:
+                status = "✅" if schedule['is_active'] else "❌"
+                message += f"{status} {schedule['notification_time']}\n"
+            message += "\n"
+        else:
+            message += "شما هیچ زمان‌بندی ندارید.\n\n"
+
+        message += "برای اضافه کردن زمان جدید، روی دکمه زیر کلیک کنید."
+
+        keyboard = [
+            [InlineKeyboardButton("➕ افزودن زمان جدید", callback_data='add_schedule_time')]
+        ]
+
+        if schedules:
+            keyboard.append([InlineKeyboardButton("🗑 مدیریت تایم‌ها", callback_data='manage_schedules')])
+
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_main')])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def add_schedule_time_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای افزودن زمان جدید"""
+        query = update.callback_query
+        await query.answer()
+
+        message = """⏰ افزودن زمان جدید:
 
 چه زمانی هر روز می‌خوای قیمت‌ها برات ارسال بشن؟
 یه دکمه رو انتخاب کن یا تایم دلخواهت رو بنویس.
@@ -824,13 +888,91 @@ class ArzalanBot:
                     row.append(InlineKeyboardButton(f"🕐 {time_str}", callback_data=f'set_time_{time_str}'))
             keyboard.append(row)
 
-        keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data='back_to_main')])
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data='setup_schedule')])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(message, reply_markup=reply_markup)
 
         # ذخیره وضعیت برای دریافت زمان دستی
         context.user_data['waiting_for_time'] = True
+
+    async def manage_schedules_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای مدیریت تایم‌ها (حذف/فعال/غیرفعال)"""
+        query = update.callback_query
+        await query.answer()
+
+        user_id = update.effective_user.id
+        schedules = db.get_user_schedules(user_id)
+
+        message = """🗑 مدیریت زمان‌بندی‌ها
+
+برای حذف یا فعال/غیرفعال کردن هر تایم، روی آن کلیک کنید:"""
+
+        keyboard = []
+        for schedule in schedules:
+            status = "✅" if schedule['is_active'] else "❌"
+            button_text = f"{status} {schedule['notification_time']}"
+            keyboard.append([InlineKeyboardButton(button_text, callback_data=f"toggle_schedule_{schedule['id']}")])
+
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data='setup_schedule')])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def toggle_schedule_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای فعال/غیرفعال یا حذف تایم"""
+        query = update.callback_query
+        schedule_id = int(query.data.split('_', 2)[2])
+
+        await query.answer()
+
+        # نمایش گزینه‌های مدیریت
+        message = "چه کاری می‌خوای انجام بدی؟"
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 فعال/غیرفعال کردن", callback_data=f'toggle_status_{schedule_id}')],
+            [InlineKeyboardButton("🗑 حذف", callback_data=f'delete_schedule_{schedule_id}')],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data='manage_schedules')]
+        ]
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def toggle_status_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """فعال/غیرفعال کردن تایم"""
+        query = update.callback_query
+        schedule_id = int(query.data.split('_', 2)[2])
+
+        db.toggle_schedule_status(schedule_id)
+
+        # به‌روزرسانی job queue
+        await self.reload_all_schedules()
+
+        await query.answer("✅ وضعیت تغییر کرد")
+
+        # بازگشت به لیست مدیریت
+        await self.manage_schedules_callback(update, context)
+
+    async def delete_schedule_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """حذف تایم"""
+        query = update.callback_query
+        schedule_id = int(query.data.split('_', 2)[2])
+
+        db.remove_notification_schedule(schedule_id)
+
+        # به‌روزرسانی job queue
+        await self.reload_all_schedules()
+
+        await query.answer("✅ تایم حذف شد")
+
+        # بازگشت به لیست مدیریت
+        user_id = update.effective_user.id
+        schedules = db.get_user_schedules(user_id)
+
+        if schedules:
+            await self.manage_schedules_callback(update, context)
+        else:
+            await self.setup_schedule_callback(update, context)
 
     async def set_time_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای تنظیم زمان از دکمه‌های پیش‌فرض"""
@@ -839,19 +981,20 @@ class ArzalanBot:
 
         user_id = update.effective_user.id
 
-        # ذخیره در دیتابیس
-        db.update_notification_settings(user_id, enabled=True, notification_time=time_str)
+        # افزودن زمان جدید به لیست
+        db.add_notification_schedule(user_id, time_str)
 
         # برنامه‌ریزی job جدید
-        self.schedule_user_notification(user_id, time_str)
+        await self.reload_all_schedules()
 
-        await query.answer("✅ زمان‌بندی تنظیم شد")
+        await query.answer("✅ زمان‌بندی اضافه شد")
 
-        message = f"""✅ زمان‌بندی با موفقیت تنظیم شد.
+        message = f"""✅ زمان‌بندی با موفقیت اضافه شد.
 
 🕐 هر روز در ساعت {time_str} گزارش قیمت‌ها برای شما ارسال می‌شود."""
 
         keyboard = [
+            [InlineKeyboardButton("➕ افزودن تایم دیگر", callback_data='add_schedule_time')],
             [InlineKeyboardButton("🔙 بازگشت به منو", callback_data='back_to_main')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -877,16 +1020,16 @@ class ArzalanBot:
             )
             return
 
-        # ذخیره در دیتابیس
-        db.update_notification_settings(user_id, enabled=True, notification_time=time_text)
+        # افزودن زمان جدید به لیست
+        db.add_notification_schedule(user_id, time_text)
 
         # برنامه‌ریزی job جدید
-        self.schedule_user_notification(user_id, time_text)
+        await self.reload_all_schedules()
 
         context.user_data['waiting_for_time'] = False
 
         await update.message.reply_text(
-            f"✅ زمان‌بندی با موفقیت تنظیم شد.\n\n"
+            f"✅ زمان‌بندی با موفقیت اضافه شد.\n\n"
             f"🕐 هر روز در ساعت {time_text} گزارش قیمت‌ها برای شما ارسال می‌شود."
         )
 
@@ -1130,90 +1273,123 @@ class ArzalanBot:
                 "❌ متأسفانه در دریافت قیمت‌ها خطایی رخ داد."
             )
 
-    def schedule_user_notification(self, user_id: int, notification_time: str):
-        """برنامه‌ریزی ارسال خودکار برای کاربر"""
+    async def reload_all_schedules(self):
+        """بازنویسی کامل job queue با زمان‌بندی‌های جدید"""
         try:
             if not self.application or not self.application.job_queue:
                 logger.error("JobQueue در دسترس نیست")
                 return
 
-            hour, minute = map(int, notification_time.split(':'))
-
-            # حذف job قبلی اگر وجود دارد
-            job_name = f'notification_{user_id}'
-            current_jobs = self.application.job_queue.get_jobs_by_name(job_name)
+            # حذف تمام job های قبلی
+            current_jobs = self.application.job_queue.jobs()
             for job in current_jobs:
-                job.schedule_removal()
+                if job.name and job.name.startswith('schedule_'):
+                    job.schedule_removal()
 
-            # تبدیل زمان به time object با timezone
-            tz = pytz.timezone(TIMEZONE)
-            scheduled_time = time(hour=hour, minute=minute, tzinfo=tz)
+            # دریافت تمام زمان‌بندی‌های فعال
+            schedules = db.get_all_active_schedules()
 
-            # اضافه کردن job جدید
-            self.application.job_queue.run_daily(
-                self.send_scheduled_price,
-                time=scheduled_time,
-                data=user_id,
-                name=job_name
-            )
+            # گروه‌بندی بر اساس زمان
+            time_groups = {}
+            for schedule in schedules:
+                time_str = schedule['notification_time']
+                if time_str not in time_groups:
+                    time_groups[time_str] = []
+                time_groups[time_str].append(schedule['user_id'])
 
-            logger.info(f"زمان‌بندی برای کاربر {user_id} در ساعت {notification_time} تنظیم شد")
+            # ایجاد job برای هر زمان
+            for time_str, user_ids in time_groups.items():
+                hour, minute = map(int, time_str.split(':'))
+                tz = pytz.timezone(TIMEZONE)
+                scheduled_time = time(hour=hour, minute=minute, tzinfo=tz)
+
+                job_name = f'schedule_{time_str.replace(":", "")}'
+
+                self.application.job_queue.run_daily(
+                    self.send_scheduled_price,
+                    time=scheduled_time,
+                    data={'time': time_str, 'user_ids': user_ids},
+                    name=job_name
+                )
+
+                logger.info(f"زمان‌بندی {time_str} با {len(user_ids)} کاربر ایجاد شد")
+
+            logger.info(f"تعداد {len(schedules)} زمان‌بندی بارگذاری شد")
 
         except Exception as e:
-            logger.error(f"خطا در زمان‌بندی: {e}")
+            logger.error(f"خطا در بازنویسی زمان‌بندی‌ها: {e}")
 
     async def send_scheduled_price(self, context: ContextTypes.DEFAULT_TYPE):
         """ارسال قیمت‌ها در زمان برنامه‌ریزی شده"""
         try:
-            # دریافت user_id از job data
-            user_id = context.job.data
+            # دریافت user_ids از job data
+            job_data = context.job.data
+            user_ids = job_data['user_ids']
+            time_str = job_data['time']
 
-            # دریافت تنظیمات کاربر
-            settings = db.get_user_settings(user_id)
+            logger.info(f"شروع ارسال برنامه‌ریزی شده برای {len(user_ids)} کاربر در ساعت {time_str}")
 
-            if not settings or not settings['notification_enabled']:
-                return
+            # ارسال پیام به هر کاربر
+            for user_id in user_ids:
+                try:
+                    # دریافت تنظیمات کاربر
+                    settings = db.get_user_settings(user_id)
 
-            crypto_ids = settings['selected_cryptos']
-            include_gold = bool(settings['include_gold'])
-            include_silver = bool(settings['include_silver'])
-            include_usd = bool(settings['include_usd'])
-            fiat_currency_ids = settings.get('selected_fiat_currencies', [])
-            gold_coin_ids = settings.get('selected_gold_coins', [])
-            gold_item_ids = settings.get('selected_gold_items', [])
+                    if not settings:
+                        continue
 
-            # دریافت قیمت‌ها
-            prices = await price_fetcher.get_all_prices(
-                crypto_ids=crypto_ids,
-                include_gold=include_gold,
-                include_silver=include_silver,
-                include_usd=include_usd,
-                fiat_currency_ids=fiat_currency_ids,
-                gold_coin_ids=gold_coin_ids,
-                gold_item_ids=gold_item_ids
-            )
+                    crypto_ids = settings['selected_cryptos']
+                    include_gold = bool(settings['include_gold'])
+                    include_silver = bool(settings['include_silver'])
+                    include_usd = bool(settings['include_usd'])
+                    fiat_currency_ids = settings.get('selected_fiat_currencies', [])
+                    gold_coin_ids = settings.get('selected_gold_coins', [])
+                    gold_item_ids = settings.get('selected_gold_items', [])
 
-            # فرمت کردن پیام
-            message = "📊 گزارش روزانه شما:\n\n"
-            message += price_fetcher.format_price_message(prices)
+                    # دریافت قیمت‌ها
+                    prices = await price_fetcher.get_all_prices(
+                        crypto_ids=crypto_ids,
+                        include_gold=include_gold,
+                        include_silver=include_silver,
+                        include_usd=include_usd,
+                        fiat_currency_ids=fiat_currency_ids,
+                        gold_coin_ids=gold_coin_ids,
+                        gold_item_ids=gold_item_ids
+                    )
 
-            # ایجاد دکمه‌های inline
-            keyboard = [
-                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+                    # فرمت کردن پیام
+                    formatted_message, has_error = price_fetcher.format_price_message(prices)
+                    message = "📊 گزارش روزانه شما:\n\n" + formatted_message
 
-            # ارسال پیام
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=message,
-                reply_markup=reply_markup
-            )
+                    # ایجاد دکمه‌های inline
+                    if has_error:
+                        keyboard = [
+                            [InlineKeyboardButton("🔄 تلاش مجدد", callback_data='refresh_prices')],
+                        ]
+                    else:
+                        keyboard = [
+                            [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                        ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # ثبت در تاریخچه
-            db.log_message(user_id, 'scheduled_notification')
+                    # ارسال پیام
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=message,
+                        reply_markup=reply_markup
+                    )
 
-            logger.info(f"گزارش برنامه‌ریزی شده برای کاربر {user_id} ارسال شد")
+                    # ثبت در تاریخچه
+                    db.log_message(user_id, 'scheduled_notification')
+
+                    logger.info(f"گزارش برنامه‌ریزی شده برای کاربر {user_id} ارسال شد")
+
+                    # تاخیر کوچک بین ارسال پیام‌ها
+                    await asyncio.sleep(0.1)
+
+                except Exception as e:
+                    logger.error(f"خطا در ارسال به کاربر {user_id}: {e}")
+                    continue
 
         except Exception as e:
             logger.error(f"خطا در ارسال گزارش برنامه‌ریزی شده: {e}")
@@ -1221,26 +1397,14 @@ class ArzalanBot:
     def load_scheduled_notifications(self):
         """بارگذاری تمام زمان‌بندی‌های ذخیره شده"""
         try:
-            # دریافت تمام کاربران با نوتیفیکیشن فعال
-            conn = db.get_connection()
-            cursor = conn.cursor()
+            # استفاده از asyncio برای فراخوانی reload_all_schedules
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.reload_all_schedules())
+            loop.close()
 
-            cursor.execute('''
-                SELECT u.user_id, s.notification_time
-                FROM users u
-                JOIN user_settings s ON u.user_id = s.user_id
-                WHERE s.notification_enabled = 1 AND u.is_active = 1
-            ''')
-
-            users = cursor.fetchall()
-            conn.close()
-
-            for user in users:
-                user_id = user['user_id']
-                notification_time = user['notification_time']
-                self.schedule_user_notification(user_id, notification_time)
-
-            logger.info(f"تعداد {len(users)} زمان‌بندی بارگذاری شد")
+            logger.info("زمان‌بندی‌ها بارگذاری شدند")
 
         except Exception as e:
             logger.error(f"خطا در بارگذاری زمان‌بندی‌ها: {e}")
@@ -1788,6 +1952,21 @@ class ArzalanBot:
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.setup_schedule_callback, pattern='^setup_schedule$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.add_schedule_time_callback, pattern='^add_schedule_time$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.manage_schedules_callback, pattern='^manage_schedules$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.toggle_schedule_callback, pattern='^toggle_schedule_'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.toggle_status_callback, pattern='^toggle_status_'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.delete_schedule_callback, pattern='^delete_schedule_'
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.set_time_callback, pattern='^set_time_'

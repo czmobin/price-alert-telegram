@@ -85,6 +85,19 @@ class Database:
             )
         ''')
 
+        # جدول زمان‌بندی اعلان‌ها (چندین تایم برای هر کاربر)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notification_schedules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                notification_time TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                UNIQUE(user_id, notification_time)
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -618,3 +631,108 @@ class Database:
         except Exception as e:
             print(f"خطا در دریافت آمار فعالیت: {e}")
             return {}
+
+    # توابع مدیریت زمان‌بندی اعلان‌ها
+
+    def add_notification_schedule(self, user_id: int, notification_time: str) -> bool:
+        """افزودن زمان‌بندی جدید برای کاربر"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT OR IGNORE INTO notification_schedules (user_id, notification_time, is_active)
+                VALUES (?, ?, 1)
+            ''', (user_id, notification_time))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در افزودن زمان‌بندی: {e}")
+            return False
+
+    def remove_notification_schedule(self, schedule_id: int) -> bool:
+        """حذف زمان‌بندی"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('DELETE FROM notification_schedules WHERE id = ?', (schedule_id,))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در حذف زمان‌بندی: {e}")
+            return False
+
+    def get_user_schedules(self, user_id: int) -> List[Dict[str, Any]]:
+        """دریافت لیست زمان‌بندی‌های کاربر"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT id, notification_time, is_active, created_at
+                FROM notification_schedules
+                WHERE user_id = ?
+                ORDER BY notification_time
+            ''', (user_id,))
+
+            schedules = [dict(row) for row in cursor.fetchall()]
+
+            conn.close()
+            return schedules
+        except Exception as e:
+            print(f"خطا در دریافت زمان‌بندی‌ها: {e}")
+            return []
+
+    def get_all_active_schedules(self) -> List[Dict[str, Any]]:
+        """دریافت تمام زمان‌بندی‌های فعال"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT ns.id, ns.user_id, ns.notification_time
+                FROM notification_schedules ns
+                JOIN users u ON ns.user_id = u.user_id
+                WHERE ns.is_active = 1 AND u.is_active = 1
+            ''')
+
+            schedules = [dict(row) for row in cursor.fetchall()]
+
+            conn.close()
+            return schedules
+        except Exception as e:
+            print(f"خطا در دریافت زمان‌بندی‌های فعال: {e}")
+            return []
+
+    def toggle_schedule_status(self, schedule_id: int) -> bool:
+        """تغییر وضعیت فعال/غیرفعال زمان‌بندی"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            # دریافت وضعیت فعلی
+            cursor.execute('SELECT is_active FROM notification_schedules WHERE id = ?', (schedule_id,))
+            row = cursor.fetchone()
+
+            if row:
+                new_status = 0 if row['is_active'] == 1 else 1
+                cursor.execute('''
+                    UPDATE notification_schedules
+                    SET is_active = ?
+                    WHERE id = ?
+                ''', (new_status, schedule_id))
+
+                conn.commit()
+                conn.close()
+                return True
+
+            conn.close()
+            return False
+        except Exception as e:
+            print(f"خطا در تغییر وضعیت زمان‌بندی: {e}")
+            return False
