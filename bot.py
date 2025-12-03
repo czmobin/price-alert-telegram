@@ -28,6 +28,7 @@ from config import (
 )
 from database import Database
 from price_fetcher import PriceFetcher
+from news_fetcher import NewsFetcher
 
 # تنظیم لاگ
 logging.basicConfig(
@@ -43,6 +44,7 @@ WAITING_FOR_BROADCAST_MESSAGE = range(1)
 # نمونه‌های global
 db = Database()
 price_fetcher = PriceFetcher()
+news_fetcher = NewsFetcher()
 
 
 class ArzalanBot:
@@ -337,6 +339,99 @@ class ArzalanBot:
 
         except Exception as e:
             logger.error(f"خطا در ارسال قیمت: {e}")
+
+    async def news_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دستور /news - ارسال اخبار کریپتو"""
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        user_id = update.effective_user.id
+
+        # ارسال پیام در حال پردازش
+        processing_msg = await update.message.reply_text("⏳ در حال دریافت آخرین اخبار...")
+
+        try:
+            # دریافت اخبار از API
+            news_items = news_fetcher.fetch_crypto_news_from_coingecko()
+
+            if not news_items:
+                await processing_msg.edit_text(
+                    "❌ متأسفانه در دریافت اخبار خطایی رخ داد. لطفاً بعداً دوباره تلاش کنید."
+                )
+                return
+
+            # دسته‌بندی اخبار
+            categorized_news = news_fetcher.categorize_news(news_items)
+
+            # فرمت کردن پیام
+            message = news_fetcher.format_news_message(categorized_news)
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("🔄 به‌روزرسانی اخبار", callback_data='refresh_news')],
+                [InlineKeyboardButton("💰 مشاهده قیمت‌ها", callback_data='send_prices_now')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # حذف پیام پردازش و ارسال پیام اصلی
+            await processing_msg.delete()
+            await update.message.reply_text(message, reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت اخبار: {e}")
+            await processing_msg.edit_text(
+                "❌ متأسفانه در دریافت اخبار خطایی رخ داد. لطفاً دوباره تلاش کنید."
+            )
+
+    async def refresh_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای به‌روزرسانی اخبار"""
+        query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        await query.answer("در حال به‌روزرسانی اخبار...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت اخبار از API
+            news_items = news_fetcher.fetch_crypto_news_from_coingecko()
+
+            if not news_items:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار خطایی رخ داد."
+                )
+                return
+
+            # دسته‌بندی اخبار
+            categorized_news = news_fetcher.categorize_news(news_items)
+
+            # فرمت کردن پیام
+            message = news_fetcher.format_news_message(categorized_news)
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("🔄 به‌روزرسانی اخبار", callback_data='refresh_news')],
+                [InlineKeyboardButton("💰 مشاهده قیمت‌ها", callback_data='send_prices_now')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(message, reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در به‌روزرسانی اخبار: {e}")
+            await query.edit_message_text(
+                "❌ متأسفانه در به‌روزرسانی اخبار خطایی رخ داد."
+            )
 
     async def refresh_prices_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای به‌روزرسانی قیمت‌ها"""
@@ -1903,8 +1998,12 @@ class ArzalanBot:
         self.application.add_handler(CommandHandler('help', self.help_command))
         self.application.add_handler(CommandHandler('settings', self.settings_command))
         self.application.add_handler(CommandHandler('admin', self.admin_panel_command))
+        self.application.add_handler(CommandHandler('news', self.news_command))
 
         # Callback handlers
+        self.application.add_handler(CallbackQueryHandler(
+            self.refresh_news_callback, pattern='^refresh_news$'
+        ))
         self.application.add_handler(CallbackQueryHandler(
             self.check_membership_callback, pattern='^check_membership$'
         ))
