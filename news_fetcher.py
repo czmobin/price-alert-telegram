@@ -36,37 +36,37 @@ class NewsFetcher:
             # برای الان، داده نمونه برمی‌گردونیم
             sample_news = [
                 {
-                    'title': 'Bitcoin Surges Past $85,000 as Institutional Adoption Grows',
+                    'title': 'بیت‌کوین از مرز ۸۵ هزار دلار عبور کرد، سرمایه‌گذاری نهادی در حال رشد',
                     'source': 'CoinDesk',
                     'body': 'fed interest rate bitcoin institutional adoption',
                     'url': ''
                 },
                 {
-                    'title': 'Ethereum Network Completes Major Upgrade, Gas Fees Drop 40%',
+                    'title': 'شبکه اتریوم ارتقای بزرگی داشت، کارمزد گس ۴۰٪ کاهش یافت',
                     'source': 'CoinTelegraph',
                     'body': 'ethereum upgrade scaling layer 2',
                     'url': ''
                 },
                 {
-                    'title': 'Federal Reserve Hints at Potential Rate Cuts in Q2 2025',
+                    'title': 'فدرال رزرو آمریکا اشاره به کاهش احتمالی نرخ بهره در Q2 سال ۲۰۲۵ کرد',
                     'source': 'Bloomberg',
                     'body': 'federal reserve interest rate inflation economy',
                     'url': ''
                 },
                 {
-                    'title': 'Solana DeFi Protocol Reports $12M Exploit',
+                    'title': 'هک ۱۲ میلیون دلاری پروتکل دیفای سولانا گزارش شد',
                     'source': 'The Block',
                     'body': 'solana hack exploit vulnerability defi protocol',
                     'url': ''
                 },
                 {
-                    'title': 'Tether Reaches $120B Market Cap, Dominates Stablecoin Market',
+                    'title': 'تتر به ارزش بازار ۱۲۰ میلیارد دلار رسید و بازار استیبل‌کوین را تسخیر کرد',
                     'source': 'CoinDesk',
                     'body': 'usdt tether stablecoin market cap',
                     'url': ''
                 },
                 {
-                    'title': 'SEC Approves New Bitcoin ETF Applications',
+                    'title': 'SEC درخواست‌های جدید ETF بیت‌کوین را تایید کرد',
                     'source': 'Reuters',
                     'body': 'sec bitcoin etf approval institutional',
                     'url': ''
