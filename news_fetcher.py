@@ -34,42 +34,51 @@ class NewsFetcher:
             # 3. CoinGecko (محدودیت rate limit داره)
 
             # برای الان، داده نمونه برمی‌گردونیم
+            from datetime import timedelta
+            now = datetime.now()
+
             sample_news = [
                 {
                     'title': 'بیت‌کوین از مرز ۸۵ هزار دلار عبور کرد، سرمایه‌گذاری نهادی در حال رشد',
                     'source': 'CoinDesk',
                     'body': 'fed interest rate bitcoin institutional adoption',
-                    'url': ''
+                    'url': 'https://www.coindesk.com',
+                    'published_at': (now - timedelta(hours=2)).strftime('%Y-%m-%d %H:%M')
                 },
                 {
                     'title': 'شبکه اتریوم ارتقای بزرگی داشت، کارمزد گس ۴۰٪ کاهش یافت',
                     'source': 'CoinTelegraph',
                     'body': 'ethereum upgrade scaling layer 2',
-                    'url': ''
+                    'url': 'https://cointelegraph.com',
+                    'published_at': (now - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M')
                 },
                 {
                     'title': 'فدرال رزرو آمریکا اشاره به کاهش احتمالی نرخ بهره در Q2 سال ۲۰۲۵ کرد',
                     'source': 'Bloomberg',
                     'body': 'federal reserve interest rate inflation economy',
-                    'url': ''
+                    'url': 'https://www.bloomberg.com',
+                    'published_at': (now - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M')
                 },
                 {
                     'title': 'هک ۱۲ میلیون دلاری پروتکل دیفای سولانا گزارش شد',
                     'source': 'The Block',
                     'body': 'solana hack exploit vulnerability defi protocol',
-                    'url': ''
+                    'url': 'https://www.theblock.co',
+                    'published_at': (now - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M')
                 },
                 {
                     'title': 'تتر به ارزش بازار ۱۲۰ میلیارد دلار رسید و بازار استیبل‌کوین را تسخیر کرد',
                     'source': 'CoinDesk',
                     'body': 'usdt tether stablecoin market cap',
-                    'url': ''
+                    'url': 'https://www.coindesk.com',
+                    'published_at': (now - timedelta(hours=8)).strftime('%Y-%m-%d %H:%M')
                 },
                 {
                     'title': 'SEC درخواست‌های جدید ETF بیت‌کوین را تایید کرد',
                     'source': 'Reuters',
                     'body': 'sec bitcoin etf approval institutional',
-                    'url': ''
+                    'url': 'https://www.reuters.com',
+                    'published_at': (now - timedelta(hours=10)).strftime('%Y-%m-%d %H:%M')
                 }
             ]
 
@@ -103,24 +112,22 @@ class NewsFetcher:
             title = item.get('title', '').lower()
             body = item.get('body', '').lower()
 
+            news_obj = {
+                'title': item.get('title', ''),
+                'source': item.get('source', ''),
+                'url': item.get('url', ''),
+                'published_at': item.get('published_at', '')
+            }
+
             # چک کردن امنیت
             if any(keyword in title or keyword in body for keyword in security_keywords):
-                categorized['security'].append({
-                    'title': item.get('title', ''),
-                    'source': item.get('source', '')
-                })
+                categorized['security'].append(news_obj)
             # چک کردن اقتصاد جهانی
             elif any(keyword in title or keyword in body for keyword in economy_keywords):
-                categorized['global_economy'].append({
-                    'title': item.get('title', ''),
-                    'source': item.get('source', '')
-                })
+                categorized['global_economy'].append(news_obj)
             # بقیه کریپتو
             else:
-                categorized['crypto'].append({
-                    'title': item.get('title', ''),
-                    'source': item.get('source', '')
-                })
+                categorized['crypto'].append(news_obj)
 
         # انتخاب highlight (اولین خبر مهم)
         if news_items:
@@ -143,6 +150,10 @@ class NewsFetcher:
         lines.append("─" * 35)
         lines.append("")
 
+        # لیست لینک‌ها برای نمایش در انتها
+        links = []
+        link_counter = 1
+
         # دریافت بخش‌های مختلف خبر
         if 'global_economy' in news_data and news_data['global_economy']:
             lines.append("🌍 اقتصاد جهانی")
@@ -151,7 +162,22 @@ class NewsFetcher:
                 title = item['title']
                 if len(title) > 80:
                     title = title[:77] + '...'
-                lines.append(f" • {title}")
+
+                # اضافه کردن شماره لینک
+                url = item.get('url', '')
+                if url:
+                    lines.append(f" • {title} [{link_counter}]")
+                    links.append(f"[{link_counter}] {url}")
+                    link_counter += 1
+                else:
+                    lines.append(f" • {title}")
+
+                # اضافه کردن تاریخ و منبع
+                source = item.get('source', '')
+                published_at = item.get('published_at', '')
+
+                if published_at and source:
+                    lines.append(f"   📅 {published_at} | 📰 {source}")
             lines.append("")
 
         if 'crypto' in news_data and news_data['crypto']:
@@ -161,7 +187,22 @@ class NewsFetcher:
                 title = item['title']
                 if len(title) > 80:
                     title = title[:77] + '...'
-                lines.append(f" • {title}")
+
+                # اضافه کردن شماره لینک
+                url = item.get('url', '')
+                if url:
+                    lines.append(f" • {title} [{link_counter}]")
+                    links.append(f"[{link_counter}] {url}")
+                    link_counter += 1
+                else:
+                    lines.append(f" • {title}")
+
+                # اضافه کردن تاریخ و منبع
+                source = item.get('source', '')
+                published_at = item.get('published_at', '')
+
+                if published_at and source:
+                    lines.append(f"   📅 {published_at} | 📰 {source}")
             lines.append("")
 
         if 'security' in news_data and news_data['security']:
@@ -171,7 +212,22 @@ class NewsFetcher:
                 title = item['title']
                 if len(title) > 80:
                     title = title[:77] + '...'
-                lines.append(f" • {title}")
+
+                # اضافه کردن شماره لینک
+                url = item.get('url', '')
+                if url:
+                    lines.append(f" • {title} [{link_counter}]")
+                    links.append(f"[{link_counter}] {url}")
+                    link_counter += 1
+                else:
+                    lines.append(f" • {title}")
+
+                # اضافه کردن تاریخ و منبع
+                source = item.get('source', '')
+                published_at = item.get('published_at', '')
+
+                if published_at and source:
+                    lines.append(f"   📅 {published_at} | 📰 {source}")
             lines.append("")
 
         if 'highlight' in news_data and news_data['highlight']:
@@ -180,6 +236,14 @@ class NewsFetcher:
             if len(highlight) > 100:
                 highlight = highlight[:97] + '...'
             lines.append(f" • {highlight}")
+            lines.append("")
+
+        # لینک‌های منابع
+        if links:
+            lines.append("─" * 35)
+            lines.append("🔗 منابع خبری:")
+            for link in links:
+                lines.append(link)
             lines.append("")
 
         # زمان به‌روزرسانی
