@@ -1498,16 +1498,10 @@ class ArzalanBot:
         except Exception as e:
             logger.error(f"خطا در ارسال گزارش برنامه‌ریزی شده: {e}")
 
-    def load_scheduled_notifications(self):
+    async def load_scheduled_notifications(self):
         """بارگذاری تمام زمان‌بندی‌های ذخیره شده"""
         try:
-            # استفاده از asyncio برای فراخوانی reload_all_schedules
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.reload_all_schedules())
-            loop.close()
-
+            await self.reload_all_schedules()
             logger.info("زمان‌بندی‌ها بارگذاری شدند")
 
         except Exception as e:
@@ -2143,7 +2137,7 @@ class ArzalanBot:
         ))
 
         # بارگذاری زمان‌بندی‌های ذخیره شده
-        self.load_scheduled_notifications()
+        await self.load_scheduled_notifications()
 
         # اجرای ربات
         logger.info("ربات دستیار ارزَلان در حال اجرا است...")
