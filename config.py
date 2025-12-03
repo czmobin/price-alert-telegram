@@ -134,3 +134,22 @@ PRESET_TIMES = [
     '18:00',
     '21:00'
 ]
+
+# تنظیمات اخبار
+NEWS_SOURCES = {
+    'coindesk': {
+        'url': 'https://www.coindesk.com/',
+        'name': 'CoinDesk',
+        'enabled': True
+    },
+    'cointelegraph': {
+        'url': 'https://cointelegraph.com/',
+        'name': 'CoinTelegraph',
+        'enabled': True
+    },
+    'theblock': {
+        'url': 'https://www.theblock.co/',
+        'name': 'The Block',
+        'enabled': False  # برای بعداً
+    }
+}
