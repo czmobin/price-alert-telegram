@@ -100,7 +100,7 @@ class ArzalanBot:
     def get_main_menu_keyboard(self):
         """منوی اصلی با دکمه‌های keyboard"""
         keyboard = [
-            ['📤 ارسال قیمت الان'],
+            ['📤 ارسال قیمت الان', '📰 اخبار روز'],
             ['🕒 تنظیم زمان ارسال روزانه پیام', '🔔 اعلان تغییر قیمت'],
             ['❓ راهنما', '⚙️ تنظیمات'],
             ['👤 پشتیبانی']
@@ -1261,6 +1261,8 @@ class ArzalanBot:
 
         if text == '📤 ارسال قیمت الان':
             await self.send_prices(update, context)
+        elif text == '📰 اخبار روز':
+            await self.news_command(update, context)
         elif text == '🕒 تنظیم زمان ارسال روزانه پیام':
             # چک عضویت کاربر
             if not await self.require_membership(update, context):
