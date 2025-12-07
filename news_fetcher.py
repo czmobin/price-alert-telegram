@@ -119,14 +119,15 @@ class NewsFetcher:
                     description = ''
                     if desc_elem is not None and desc_elem.text:
                         # حذف HTML tags از description
-                        soup = BeautifulSoup(desc_elem.text, 'lxml')
+                        # استفاده از html.parser که built-in پایتون است
+                        soup = BeautifulSoup(desc_elem.text, 'html.parser')
                         description = soup.get_text(strip=True)[:200]  # 200 کاراکتر اول
 
                     # اگر description خالی بود، از content:encoded استفاده کن
                     if not description:
                         content_elem = item.find('content:encoded', namespaces)
                         if content_elem is not None and content_elem.text:
-                            soup = BeautifulSoup(content_elem.text, 'lxml')
+                            soup = BeautifulSoup(content_elem.text, 'html.parser')
                             description = soup.get_text(strip=True)[:200]
 
                     # استخراج زمان انتشار
