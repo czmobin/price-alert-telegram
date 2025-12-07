@@ -181,9 +181,141 @@ class ForexNewsFetcher:
             resp = await client.get(url, headers=headers)
             return resp.json()
 
+    async def get_combined_news(self) -> Optional[str]:
+        """
+        دریافت اخبار امروز + اخبار هفته به صورت ترکیبی
+
+        Returns:
+            str یا None: پیام فرمت شده اخبار روز و هفته
+        """
+        try:
+            # چک کردن دسترسی به API
+            if not self.use_playwright:
+                return self._get_unavailable_message()
+
+            today = datetime.date.today()
+            week_end = today + datetime.timedelta(days=6)
+
+            # دریافت اخبار امروز
+            today_data = await self.fetch_events(today, today)
+            today_events = today_data.get("data", {}).get("forex", [])
+
+            # دریافت اخبار هفته
+            week_data = await self.fetch_events(today, week_end)
+            week_events = week_data.get("data", {}).get("forex", [])
+
+            msg_lines = []
+
+            # بخش اول: اخبار امروز
+            msg_lines.append(f"📰 *اخبار اقتصاد جهانی امروز* ({today})")
+            msg_lines.append("")
+
+            if not today_events:
+                msg_lines.append("⚠️ اخبار امروز موجود نیست.")
+            else:
+                for day in today_events:
+                    events = day.get("events", [])
+                    if not events:
+                        continue
+
+                    # گروه‌بندی بر اساس سطح تاثیر
+                    high_impact = []
+                    mid_impact = []
+
+                    for ev in events:
+                        impact = ev.get('impact', '').lower()
+                        event_info = {
+                            'color': self.get_news_color(impact),
+                            'currency': ev.get('currency_symbol', ''),
+                            'time': ev.get('time', ''),
+                            'name_fa': ev['event'].get('event_name_fa', ''),
+                            'actual': ev.get('actual', '-'),
+                            'forecast': ev.get('forecast', '-'),
+                            'previous': ev.get('previous', '-')
+                        }
+
+                        if impact == 'high':
+                            high_impact.append(event_info)
+                        elif impact == 'mid':
+                            mid_impact.append(event_info)
+
+                    # نمایش اخبار بر اساس اولویت
+                    if high_impact:
+                        msg_lines.append("🔴 *اخبار پرتاثیر*")
+                        for ev in high_impact:
+                            msg_lines.append(f"{ev['color']} {ev['currency']} {ev['time']}")
+                            msg_lines.append(f"   📌 {ev['name_fa']}")
+                            msg_lines.append(f"   💱 تاثیر بر: {ev['currency']}")
+                            msg_lines.append(f"   🔹 فعلی: {ev['actual']} | 🔸 پیش‌بینی: {ev['forecast']} | ⬅️ قبلی: {ev['previous']}")
+                            msg_lines.append("")
+
+                    if mid_impact:
+                        msg_lines.append("🟡 *اخبار تاثیر متوسط*")
+                        for ev in mid_impact[:5]:  # فقط 5 تای اول
+                            msg_lines.append(f"{ev['color']} {ev['currency']} {ev['time']} - {ev['name_fa']}")
+                        msg_lines.append("")
+
+            # جدا کننده
+            msg_lines.append("─" * 35)
+            msg_lines.append("")
+
+            # بخش دوم: اخبار هفته
+            msg_lines.append("📅 *اخبار مهم این هفته*")
+            msg_lines.append("")
+
+            if not week_events:
+                msg_lines.append("⚠️ اخبار هفته موجود نیست.")
+            else:
+                for day in week_events:
+                    date = day.get("date")
+                    events = day.get("events", [])
+
+                    if not events:
+                        continue
+
+                    # فقط نمایش روزهایی که اخبار پرتاثیر یا متوسط دارند
+                    important_events = []
+                    for ev in events:
+                        impact = ev.get('impact', '').lower()
+                        if impact in ['high', 'mid']:
+                            color = self.get_news_color(impact)
+                            currency = ev.get('currency_symbol', '')
+                            time_str = ev.get('time', '')
+                            name_fa = ev['event'].get('event_name_fa', '')
+                            important_events.append(f"  {color} {time_str} - {name_fa} ({currency})")
+
+                    if important_events:
+                        msg_lines.append(f"🗓️ *{date}*")
+                        msg_lines.extend(important_events)
+                        msg_lines.append("")
+
+            msg_lines.append("─" * 35)
+            msg_lines.append("منبع: ForexFactory.live")
+            msg_lines.append("")
+            msg_lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
+            msg_lines.append("@arzzalanbot")
+
+            return "\n".join(msg_lines)
+
+        except Exception as e:
+            print(f"❌ خطا در دریافت اخبار اقتصاد جهانی: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
     async def get_daily_news(self) -> Optional[str]:
         """
-        دریافت اخبار امروز به صورت فرمت شده
+        دریافت اخبار امروز به صورت فرمت شده (برای سازگاری با کدهای قدیمی)
+
+        Returns:
+            str یا None: پیام فرمت شده اخبار روز
+        """
+        # استفاده از combined news
+        return await self.get_combined_news()
+
+    async def get_daily_news_only(self) -> Optional[str]:
+        """
+        دریافت فقط اخبار امروز (بدون اخبار هفته)
 
         Returns:
             str یا None: پیام فرمت شده اخبار روز

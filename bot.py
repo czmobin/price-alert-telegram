@@ -466,7 +466,6 @@ class ArzalanBot:
 
             # ایجاد دکمه‌های inline
             keyboard = [
-                [InlineKeyboardButton("📅 اخبار هفته", callback_data='global_weekly_news')],
                 [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='news_global')],
                 [InlineKeyboardButton("🔙 بازگشت", callback_data='news_menu')]
             ]
