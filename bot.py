@@ -2312,6 +2312,20 @@ class ArzalanBot:
         # تنظیم command hints
         await self.set_bot_commands()
 
+        # دریافت x-signature برای اخبار جهانی (اگر Playwright فعال باشه)
+        if forex_news_fetcher.use_playwright:
+            logger.info("🌍 در حال دریافت x-signature برای اخبار جهانی...")
+            try:
+                await forex_news_fetcher.get_x_signature()
+                if forex_news_fetcher.x_signature:
+                    logger.info("✅ x-signature با موفقیت دریافت شد")
+                else:
+                    logger.warning("⚠️ x-signature دریافت نشد - اخبار جهانی موقتاً در دسترس نخواهد بود")
+            except Exception as e:
+                logger.error(f"❌ خطا در دریافت x-signature: {e}")
+        else:
+            logger.info("⚠️ Playwright غیرفعال است - اخبار جهانی موقتاً در دسترس نخواهد بود")
+
         # Handler ها
         self.application.add_handler(CommandHandler('start', self.start_command))
         self.application.add_handler(CommandHandler('help', self.help_command))

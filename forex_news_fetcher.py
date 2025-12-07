@@ -170,13 +170,9 @@ class ForexNewsFetcher:
         Returns:
             dict: داده‌های رویدادها
         """
-        # اطمینان از وجود x-signature
+        # چک کردن وجود x-signature (بدون تلاش مجدد برای دریافت)
         if not self.x_signature:
-            await self.get_x_signature()
-
-        # اگر هنوز x-signature دریافت نشد، خطا بده
-        if not self.x_signature:
-            raise Exception("نتوانستیم x-signature را از سایت دریافت کنیم. لطفاً بعداً دوباره تلاش کنید.")
+            raise Exception("x-signature موجود نیست. لطفاً بات را مجدداً راه‌اندازی کنید.")
 
         headers = {"x-signature": self.x_signature}
         url = f"{self.api_base}/?start_date={start_date}&end_date={end_date}"
