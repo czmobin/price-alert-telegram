@@ -1,5 +1,5 @@
 """
-دریافت و فرمت‌کردن اخبار فارکس فکتوری
+دریافت و فرمت‌کردن اخبار اقتصاد جهانی از فارکس فکتوری
 """
 import asyncio
 import datetime
@@ -10,7 +10,7 @@ import os
 
 
 class ForexNewsFetcher:
-    """کلاس دریافت و پردازش اخبار فارکس فکتوری"""
+    """کلاس دریافت و پردازش اخبار اقتصاد جهانی"""
 
     def __init__(self):
         self.base_url = "https://forexfactory.live/"
@@ -204,10 +204,10 @@ class ForexNewsFetcher:
             forex_days = data.get("data", {}).get("forex", [])
 
             if not forex_days:
-                return "📰 اخبار جهانی امروز موجود نیست."
+                return "📰 اخبار اقتصاد جهانی امروز موجود نیست."
 
             # ساخت پیام
-            msg_lines = [f"📰 *اخبار جهانی امروز* ({today})", ""]
+            msg_lines = [f"📰 *اخبار اقتصاد جهانی امروز* ({today})", ""]
 
             for day in forex_days:
                 events = day.get("events", [])
@@ -245,6 +245,7 @@ class ForexNewsFetcher:
                     for ev in high_impact:
                         msg_lines.append(f"{ev['color']} {ev['currency']} {ev['time']}")
                         msg_lines.append(f"   📌 {ev['name_fa']}")
+                        msg_lines.append(f"   💱 تاثیر بر: {ev['currency']}")
                         msg_lines.append(f"   🔹 فعلی: {ev['actual']} | 🔸 پیش‌بینی: {ev['forecast']} | ⬅️ قبلی: {ev['previous']}")
                         msg_lines.append("")
 
@@ -277,11 +278,11 @@ class ForexNewsFetcher:
     def _get_unavailable_message(self) -> str:
         """پیام موقت برای زمانی که سرویس در دسترس نیست"""
         return """
-📰 *اخبار جهانی (Forex Factory)*
+📰 *اخبار اقتصاد جهانی*
 
 ⚠️ *موقتاً در دسترس نیست*
 
-متأسفانه در حال حاضر به دلیل محدودیت‌های شبکه، امکان دریافت اخبار از Forex Factory وجود ندارد.
+متأسفانه در حال حاضر به دلیل محدودیت‌های شبکه، امکان دریافت اخبار اقتصادی وجود ندارد.
 
 🔄 *منابع جایگزین پیشنهادی:*
 • [Forex Factory](https://forexfactory.live/)
@@ -316,10 +317,10 @@ class ForexNewsFetcher:
             forex_days = data.get("data", {}).get("forex", [])
 
             if not forex_days:
-                return "📅 اخبار جهانی این هفته موجود نیست."
+                return "📅 اخبار اقتصاد جهانی این هفته موجود نیست."
 
             # ساخت پیام
-            msg_lines = ["📅 *اخبار جهانی این هفته*", ""]
+            msg_lines = ["📅 *اخبار اقتصاد جهانی این هفته*", ""]
 
             for day in forex_days:
                 date = day.get("date")
@@ -338,7 +339,8 @@ class ForexNewsFetcher:
                         currency = ev.get('currency_symbol', '')
                         time_str = ev.get('time', '')
                         name_fa = ev['event'].get('event_name_fa', '')
-                        msg_lines.append(f"  {color} {currency} {time_str} - {name_fa}")
+                        # اضافه کردن ارز تاثیرگذار
+                        msg_lines.append(f"  {color} {time_str} - {name_fa} ({currency})")
 
                 msg_lines.append("")
 
