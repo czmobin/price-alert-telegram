@@ -5,7 +5,9 @@ from datetime import datetime
 from typing import Dict, List, Optional
 import requests
 import json
+import re
 import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
 
 
 class NewsFetcher:
@@ -14,79 +16,179 @@ class NewsFetcher:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'fa,en-US;q=0.7,en;q=0.3',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
         })
+        # استفاده از Ramzarz.news به دلیل داشتن RSS Feed
+        self.ramzarz_rss_url = 'https://ramzarz.news/feed/rss/'
+        self.ramzarz_url = 'https://ramzarz.news/'
 
-    def fetch_crypto_news_from_coingecko(self) -> Optional[List[Dict]]:
+    def _parse_persian_time(self, time_text: str) -> str:
         """
-        دریافت اخبار کریپتو
+        تبدیل زمان فارسی به فرمت استاندارد
 
-        نکته: برای استفاده واقعی، باید یک API key رایگان از CryptoPanic یا NewsAPI دریافت کنید.
-        این نسخه داده‌های نمونه برمی‌گرداند برای نمایش ساختار.
+        Args:
+            time_text: متن زمان به فارسی (مثلاً "۳ ساعت پیش")
+
+        Returns:
+            str: زمان به فرمت YYYY-MM-DD HH:MM
+        """
+        from datetime import timedelta
+        import re
+
+        now = datetime.now()
+
+        # تبدیل اعداد فارسی به انگلیسی
+        persian_to_english = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
+        time_text = time_text.translate(persian_to_english)
+
+        # استخراج عدد
+        number_match = re.search(r'(\d+)', time_text)
+        if not number_match:
+            return now.strftime('%Y-%m-%d %H:%M')
+
+        number = int(number_match.group(1))
+
+        # تشخیص نوع زمان
+        if 'ساعت' in time_text or 'hour' in time_text:
+            time_ago = now - timedelta(hours=number)
+        elif 'روز' in time_text or 'day' in time_text:
+            time_ago = now - timedelta(days=number)
+        elif 'دقیقه' in time_text or 'minute' in time_text:
+            time_ago = now - timedelta(minutes=number)
+        else:
+            time_ago = now
+
+        return time_ago.strftime('%Y-%m-%d %H:%M')
+
+    def fetch_crypto_news_from_ramzarz(self) -> Optional[List[Dict]]:
+        """
+        دریافت اخبار کریپتو از Ramzarz.news (با استفاده از RSS Feed)
 
         Returns:
             list: لیست اخبار یا None در صورت خطا
         """
         try:
-            # TODO: برای production، از یکی از این API ها استفاده کن:
-            # 1. CryptoPanic API (نیاز به API key رایگان)
-            # 2. NewsAPI.org (50 request روزانه رایگان)
-            # 3. CoinGecko (محدودیت rate limit داره)
+            print("در حال دریافت اخبار از Ramzarz.news...")
 
-            # برای الان، داده نمونه برمی‌گردونیم
-            from datetime import timedelta
-            now = datetime.now()
+            # دریافت RSS Feed
+            # استفاده از requests.get مستقیم بجای session برای جلوگیری از مشکلات encoding
+            response = requests.get(
+                self.ramzarz_rss_url,
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
+                timeout=10
+            )
+            response.raise_for_status()
 
-            sample_news = [
-                {
-                    'title': 'بیت‌کوین از مرز ۸۵ هزار دلار عبور کرد، سرمایه‌گذاری نهادی در حال رشد',
-                    'source': 'CoinDesk',
-                    'body': 'fed interest rate bitcoin institutional adoption',
-                    'url': 'https://www.coindesk.com',
-                    'published_at': (now - timedelta(hours=2)).strftime('%Y-%m-%d %H:%M')
-                },
-                {
-                    'title': 'شبکه اتریوم ارتقای بزرگی داشت، کارمزد گس ۴۰٪ کاهش یافت',
-                    'source': 'CoinTelegraph',
-                    'body': 'ethereum upgrade scaling layer 2',
-                    'url': 'https://cointelegraph.com',
-                    'published_at': (now - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M')
-                },
-                {
-                    'title': 'فدرال رزرو آمریکا اشاره به کاهش احتمالی نرخ بهره در Q2 سال ۲۰۲۵ کرد',
-                    'source': 'Bloomberg',
-                    'body': 'federal reserve interest rate inflation economy',
-                    'url': 'https://www.bloomberg.com',
-                    'published_at': (now - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M')
-                },
-                {
-                    'title': 'هک ۱۲ میلیون دلاری پروتکل دیفای سولانا گزارش شد',
-                    'source': 'The Block',
-                    'body': 'solana hack exploit vulnerability defi protocol',
-                    'url': 'https://www.theblock.co',
-                    'published_at': (now - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M')
-                },
-                {
-                    'title': 'تتر به ارزش بازار ۱۲۰ میلیارد دلار رسید و بازار استیبل‌کوین را تسخیر کرد',
-                    'source': 'CoinDesk',
-                    'body': 'usdt tether stablecoin market cap',
-                    'url': 'https://www.coindesk.com',
-                    'published_at': (now - timedelta(hours=8)).strftime('%Y-%m-%d %H:%M')
-                },
-                {
-                    'title': 'SEC درخواست‌های جدید ETF بیت‌کوین را تایید کرد',
-                    'source': 'Reuters',
-                    'body': 'sec bitcoin etf approval institutional',
-                    'url': 'https://www.reuters.com',
-                    'published_at': (now - timedelta(hours=10)).strftime('%Y-%m-%d %H:%M')
-                }
-            ]
+            # پاک کردن BOM و whitespace اضافی
+            content = response.content
 
-            return sample_news
+            # حذف BOM اگر وجود داشت
+            if content.startswith(b'\xef\xbb\xbf'):
+                content = content[3:]
 
-        except Exception as e:
-            print(f"خطا در دریافت اخبار: {e}")
+            # حذف whitespace قبل از XML
+            content = content.lstrip()
+
+            # پارس XML
+            root = ET.fromstring(content)
+
+            # پیدا کردن namespace (در صورت وجود)
+            namespaces = {'content': 'http://purl.org/rss/1.0/modules/content/',
+                         'dc': 'http://purl.org/dc/elements/1.1/'}
+
+            news_list = []
+
+            # پیدا کردن تمام آیتم‌های خبری
+            for item in root.findall('.//item')[:20]:  # فقط 20 خبر اول
+                try:
+                    # استخراج عنوان
+                    title_elem = item.find('title')
+                    title = title_elem.text if title_elem is not None else ''
+
+                    # استخراج لینک
+                    link_elem = item.find('link')
+                    url = link_elem.text if link_elem is not None else ''
+
+                    # استخراج توضیحات/محتوا
+                    desc_elem = item.find('description')
+                    description = ''
+                    if desc_elem is not None and desc_elem.text:
+                        # حذف HTML tags از description
+                        soup = BeautifulSoup(desc_elem.text, 'lxml')
+                        description = soup.get_text(strip=True)[:200]  # 200 کاراکتر اول
+
+                    # اگر description خالی بود، از content:encoded استفاده کن
+                    if not description:
+                        content_elem = item.find('content:encoded', namespaces)
+                        if content_elem is not None and content_elem.text:
+                            soup = BeautifulSoup(content_elem.text, 'lxml')
+                            description = soup.get_text(strip=True)[:200]
+
+                    # استخراج زمان انتشار
+                    pub_date_elem = item.find('pubDate')
+                    published_at = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+                    if pub_date_elem is not None and pub_date_elem.text:
+                        try:
+                            # فرمت RSS: Mon, 07 Dec 2025 12:00:00 +0000
+                            from email.utils import parsedate_to_datetime
+                            dt = parsedate_to_datetime(pub_date_elem.text)
+                            published_at = dt.strftime('%Y-%m-%d %H:%M')
+                        except:
+                            pass
+
+                    # استخراج دسته‌بندی
+                    categories = []
+                    for cat_elem in item.findall('category'):
+                        if cat_elem.text:
+                            categories.append(cat_elem.text)
+
+                    # ساخت آبجکت خبر
+                    news_obj = {
+                        'title': title.strip(),
+                        'source': 'Ramzarz',
+                        'body': description or title,  # اگر توضیحات نبود، از عنوان استفاده کن
+                        'url': url.strip(),
+                        'published_at': published_at,
+                        'categories': categories
+                    }
+
+                    if title and url:  # فقط اگر عنوان و لینک داشت
+                        news_list.append(news_obj)
+
+                except Exception as e:
+                    print(f"خطا در پردازش یک خبر: {e}")
+                    continue
+
+            print(f"✅ {len(news_list)} خبر از Ramzarz دریافت شد")
+            return news_list
+
+        except requests.exceptions.RequestException as e:
+            print(f"خطا در اتصال به Ramzarz: {e}")
             return None
+        except ET.ParseError as e:
+            print(f"خطا در پارس XML: {e}")
+            return None
+        except Exception as e:
+            print(f"خطا در دریافت اخبار از Ramzarz: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def fetch_crypto_news_from_coingecko(self) -> Optional[List[Dict]]:
+        """
+        دریافت اخبار کریپتو - این متد حالا از Ramzarz.news استفاده می‌کند
+
+        Returns:
+            list: لیست اخبار یا None در صورت خطا
+        """
+        # استفاده از RSS Feed از Ramzarz.news
+        return self.fetch_crypto_news_from_ramzarz()
 
     def categorize_news(self, news_items: List[Dict]) -> Dict:
         """
