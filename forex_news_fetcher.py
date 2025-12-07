@@ -6,6 +6,7 @@ import datetime
 import httpx
 from playwright.async_api import async_playwright
 from typing import Optional, List, Dict
+import os
 
 
 class ForexNewsFetcher:
@@ -15,6 +16,8 @@ class ForexNewsFetcher:
         self.base_url = "https://forexfactory.live/"
         self.api_base = "https://requests.forexfactory.live/api/calendars/events"
         self.x_signature = None
+        # استفاده از متغیر محیطی برای فعال/غیرفعال کردن Playwright
+        self.use_playwright = os.getenv('USE_PLAYWRIGHT', 'false').lower() == 'true'
 
     def get_news_color(self, impact: str) -> str:
         """
@@ -75,34 +78,63 @@ class ForexNewsFetcher:
         if self.x_signature:
             return  # اگر قبلاً دریافت شده، دوباره دریافت نکن
 
+        # بررسی اینکه آیا Playwright فعال است یا نه
+        if not self.use_playwright:
+            print("⚠️ Playwright غیرفعال است. برای فعال‌سازی متغیر USE_PLAYWRIGHT=true را تنظیم کنید.")
+            return
+
         signature_event = asyncio.Event()
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
-            context = await browser.new_context()
-            page = await context.new_page()
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+                )
+                context = await browser.new_context(
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                )
+                page = await context.new_page()
 
-            async def log_request(request):
-                if self.x_signature:
-                    return
-                if "api/calendars/events" in request.url:
+                async def log_request(request):
+                    if self.x_signature:
+                        return
+                    if "api/calendars/events" in request.url:
+                        try:
+                            headers = await request.all_headers()
+                            sig = headers.get("x-signature")
+                            if sig:
+                                self.x_signature = sig
+                                print(f"\n✅ x-signature دریافت شد: {self.x_signature}")
+                                signature_event.set()
+                        except Exception as e:
+                            print(f"خطا در دریافت headers: {e}")
+
+                page.on("request", log_request)
+
+                # رفتن به صفحه و صبر برای بارگذاری کامل
+                await page.goto(self.base_url, wait_until="networkidle", timeout=30000)
+
+                # صبر اضافی برای اطمینان از بارگذاری کامل
+                await asyncio.sleep(3)
+
+                try:
+                    await asyncio.wait_for(signature_event.wait(), timeout=15)
+                except asyncio.TimeoutError:
+                    print("❌ x-signature پیدا نشد! در حال تلاش مجدد...")
+                    # تلاش مجدد با رفرش صفحه
+                    await page.reload(wait_until="networkidle")
+                    await asyncio.sleep(2)
                     try:
-                        headers = await request.all_headers()
-                        self.x_signature = headers.get("x-signature")
-                        print(f"\n✅ x-signature دریافت شد: {self.x_signature}")
-                        signature_event.set()
-                    except Exception:
-                        pass
+                        await asyncio.wait_for(signature_event.wait(), timeout=10)
+                    except asyncio.TimeoutError:
+                        print("❌ x-signature در تلاش دوم هم پیدا نشد!")
 
-            page.on("request", log_request)
-            await page.goto(self.base_url, wait_until="domcontentloaded")
-
-            try:
-                await asyncio.wait_for(signature_event.wait(), timeout=10)
-            except asyncio.TimeoutError:
-                print("❌ x-signature پیدا نشد!")
-
-            await browser.close()
+                await browser.close()
+        except Exception as e:
+            print(f"❌ خطا در راه‌اندازی Playwright: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def fetch_event_details(self, client: httpx.AsyncClient, event_id: str, currency_symbol: str) -> Optional[Dict]:
         """
@@ -142,10 +174,14 @@ class ForexNewsFetcher:
         if not self.x_signature:
             await self.get_x_signature()
 
+        # اگر هنوز x-signature دریافت نشد، خطا بده
+        if not self.x_signature:
+            raise Exception("نتوانستیم x-signature را از سایت دریافت کنیم. لطفاً بعداً دوباره تلاش کنید.")
+
         headers = {"x-signature": self.x_signature}
         url = f"{self.api_base}/?start_date={start_date}&end_date={end_date}"
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
             return resp.json()
 
@@ -157,6 +193,10 @@ class ForexNewsFetcher:
             str یا None: پیام فرمت شده اخبار روز
         """
         try:
+            # چک کردن دسترسی به API
+            if not self.use_playwright:
+                return self._get_unavailable_message()
+
             today = datetime.date.today()
 
             # دریافت اخبار
@@ -234,6 +274,28 @@ class ForexNewsFetcher:
             traceback.print_exc()
             return None
 
+    def _get_unavailable_message(self) -> str:
+        """پیام موقت برای زمانی که سرویس در دسترس نیست"""
+        return """
+📰 *اخبار جهانی (Forex Factory)*
+
+⚠️ *موقتاً در دسترس نیست*
+
+متأسفانه در حال حاضر به دلیل محدودیت‌های شبکه، امکان دریافت اخبار از Forex Factory وجود ندارد.
+
+🔄 *منابع جایگزین پیشنهادی:*
+• [Forex Factory](https://forexfactory.live/)
+• [Investing.com Economic Calendar](https://www.investing.com/economic-calendar/)
+• [Trading Economics](https://tradingeconomics.com/calendar)
+• [FXStreet Calendar](https://www.fxstreet.com/economic-calendar)
+
+این قابلیت به‌زودی با منبع دیگری جایگزین خواهد شد.
+
+─────────────────────────────
+ارزَلان دستیار اطلاع‌رسانی قیمت
+@arzzalanbot
+"""
+
     async def get_weekly_news(self) -> Optional[str]:
         """
         دریافت اخبار هفته به صورت فرمت شده
@@ -242,6 +304,10 @@ class ForexNewsFetcher:
             str یا None: پیام فرمت شده اخبار هفته
         """
         try:
+            # چک کردن دسترسی به API
+            if not self.use_playwright:
+                return self._get_unavailable_message()
+
             today = datetime.date.today()
             end = today + datetime.timedelta(days=6)
 

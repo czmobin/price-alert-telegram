@@ -444,8 +444,11 @@ class ArzalanBot:
 
         user_id = update.effective_user.id
 
+        # دریافت message object (چه از command باشه چه از keyboard button)
+        message = update.message or update.effective_message
+
         # ارسال پیام در حال پردازش
-        processing_msg = await update.message.reply_text("⏳ در حال دریافت اخبار جهانی...")
+        processing_msg = await message.reply_text("⏳ در حال دریافت اخبار جهانی...")
 
         try:
             # دریافت اخبار روز
@@ -467,7 +470,7 @@ class ArzalanBot:
 
             # حذف پیام پردازش و ارسال پیام اصلی
             await processing_msg.delete()
-            await update.message.reply_text(news_message, parse_mode='Markdown', reply_markup=reply_markup)
+            await message.reply_text(news_message, parse_mode='Markdown', reply_markup=reply_markup)
 
             # ثبت در تاریخچه
             db.log_message(user_id, 'forex_news_request')
