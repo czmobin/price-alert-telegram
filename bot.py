@@ -418,7 +418,12 @@ class ArzalanBot:
     async def news_menu_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای بازگشت به منوی اخبار"""
         query = update.callback_query
-        await query.answer()
+
+        try:
+            await query.answer()
+        except Exception:
+            # اگر query قدیمی بود، نادیده بگیر
+            pass
 
         # ایجاد منوی انتخاب نوع خبر
         keyboard = [
@@ -428,11 +433,14 @@ class ArzalanBot:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await query.edit_message_text(
-            "📰 *انتخاب نوع خبر*\n\nلطفاً نوع خبری که می‌خواهید مشاهده کنید را انتخاب کنید:",
-            parse_mode='Markdown',
-            reply_markup=reply_markup
-        )
+        try:
+            await query.edit_message_text(
+                "📰 *انتخاب نوع خبر*\n\nلطفاً نوع خبری که می‌خواهید مشاهده کنید را انتخاب کنید:",
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"خطا در ویرایش پیام منوی اخبار: {e}")
 
     async def global_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای نمایش اخبار اقتصاد جهانی"""
