@@ -28,6 +28,9 @@ from config import (
 )
 from database import Database
 from price_fetcher import PriceFetcher
+from news_fetcher import NewsFetcher
+from forex_news_fetcher import ForexNewsFetcher
+from security_news_fetcher import SecurityNewsFetcher
 
 # تنظیم لاگ
 logging.basicConfig(
@@ -43,6 +46,9 @@ WAITING_FOR_BROADCAST_MESSAGE = range(1)
 # نمونه‌های global
 db = Database()
 price_fetcher = PriceFetcher()
+news_fetcher = NewsFetcher()
+forex_news_fetcher = ForexNewsFetcher()
+security_news_fetcher = SecurityNewsFetcher()
 
 
 class ArzalanBot:
@@ -98,6 +104,7 @@ class ArzalanBot:
     def get_main_menu_keyboard(self):
         """منوی اصلی با دکمه‌های keyboard"""
         keyboard = [
+            ['📰 اخبار'],
             ['📤 ارسال قیمت الان'],
             ['🕒 تنظیم زمان ارسال روزانه پیام', '🔔 اعلان تغییر قیمت'],
             ['❓ راهنما', '⚙️ تنظیمات'],
@@ -337,6 +344,408 @@ class ArzalanBot:
 
         except Exception as e:
             logger.error(f"خطا در ارسال قیمت: {e}")
+
+    async def news_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دستور /news - نمایش منوی انتخاب نوع خبر"""
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        # دریافت message object (چه از command باشه چه از keyboard button)
+        message = update.message or update.effective_message
+
+        # ایجاد منوی انتخاب نوع خبر
+        keyboard = [
+            [InlineKeyboardButton("📰 اخبار کریپتو", callback_data='news_crypto')],
+            [InlineKeyboardButton("🌍 اخبار اقتصاد جهانی", callback_data='news_global')],
+            [InlineKeyboardButton("🔒 اخبار امنیت کریپتو", callback_data='news_security')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await message.reply_text(
+            "📰 *انتخاب نوع خبر*\n\nلطفاً نوع خبری که می‌خواهید مشاهده کنید را انتخاب کنید:",
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+
+    async def crypto_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای نمایش اخبار کریپتو"""
+        query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        await query.answer("در حال دریافت اخبار کریپتو...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت اخبار از API
+            news_items = news_fetcher.fetch_crypto_news_from_coingecko()
+
+            if not news_items:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار خطایی رخ داد. لطفاً بعداً دوباره تلاش کنید."
+                )
+                return
+
+            # دسته‌بندی اخبار
+            categorized_news = news_fetcher.categorize_news(news_items)
+
+            # فرمت کردن پیام
+            message = news_fetcher.format_news_message(categorized_news)
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='news_crypto')],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data='news_menu')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # ویرایش پیام
+            await query.edit_message_text(message, reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت اخبار: {e}")
+            await query.edit_message_text(
+                "❌ متأسفانه در دریافت اخبار خطایی رخ داد. لطفاً دوباره تلاش کنید."
+            )
+
+    async def news_menu_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای بازگشت به منوی اخبار"""
+        query = update.callback_query
+
+        try:
+            await query.answer()
+        except Exception:
+            # اگر query قدیمی بود، نادیده بگیر
+            pass
+
+        # ایجاد منوی انتخاب نوع خبر
+        keyboard = [
+            [InlineKeyboardButton("📰 اخبار کریپتو", callback_data='news_crypto')],
+            [InlineKeyboardButton("🌍 اخبار اقتصاد جهانی", callback_data='news_global')],
+            [InlineKeyboardButton("🔒 اخبار امنیت کریپتو", callback_data='news_security')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        try:
+            await query.edit_message_text(
+                "📰 *انتخاب نوع خبر*\n\nلطفاً نوع خبری که می‌خواهید مشاهده کنید را انتخاب کنید:",
+                parse_mode='Markdown',
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"خطا در ویرایش پیام منوی اخبار: {e}")
+
+    async def global_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای نمایش اخبار اقتصاد جهانی"""
+        query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        await query.answer("در حال دریافت اخبار اقتصاد جهانی...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت اخبار روز
+            news_message = await forex_news_fetcher.get_daily_news()
+
+            if not news_message:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار اقتصاد جهانی خطایی رخ داد."
+                )
+                return
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("📅 اخبار هفته", callback_data='global_weekly_news')],
+                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='news_global')],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data='news_menu')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(news_message, parse_mode='Markdown', reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'global_news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت اخبار اقتصاد جهانی: {e}")
+            import traceback
+            traceback.print_exc()
+            await query.edit_message_text(
+                "❌ متأسفانه در دریافت اخبار اقتصاد جهانی خطایی رخ داد."
+            )
+
+    async def global_weekly_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای نمایش اخبار هفتگی اقتصاد جهانی"""
+        query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        await query.answer("در حال دریافت اخبار هفته...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت اخبار هفته
+            news_message = await forex_news_fetcher.get_weekly_news()
+
+            if not news_message:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار هفتگی خطایی رخ داد."
+                )
+                return
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("📰 اخبار امروز", callback_data='news_global')],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data='news_menu')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(news_message, parse_mode='Markdown', reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'global_weekly_news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت اخبار هفتگی: {e}")
+            import traceback
+            traceback.print_exc()
+            await query.edit_message_text(
+                "❌ متأسفانه در دریافت اخبار هفتگی خطایی رخ داد."
+            )
+
+    async def security_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای نمایش اخبار امنیت کریپتو"""
+        query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        await query.answer("در حال دریافت اخبار امنیتی...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت اخبار امنیتی
+            news_message = security_news_fetcher.get_security_news()
+
+            if not news_message:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار امنیتی خطایی رخ داد."
+                )
+                return
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='news_security')],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data='news_menu')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(news_message, reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'security_news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت اخبار امنیتی: {e}")
+            import traceback
+            traceback.print_exc()
+            await query.edit_message_text(
+                "❌ متأسفانه در دریافت اخبار امنیتی خطایی رخ داد."
+            )
+
+    async def refresh_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای به‌روزرسانی اخبار"""
+        query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        await query.answer("در حال به‌روزرسانی اخبار...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت اخبار از API
+            news_items = news_fetcher.fetch_crypto_news_from_coingecko()
+
+            if not news_items:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار خطایی رخ داد."
+                )
+                return
+
+            # دسته‌بندی اخبار
+            categorized_news = news_fetcher.categorize_news(news_items)
+
+            # فرمت کردن پیام
+            message = news_fetcher.format_news_message(categorized_news)
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("🔄 به‌روزرسانی اخبار", callback_data='refresh_news')],
+                [InlineKeyboardButton("💰 مشاهده قیمت‌ها", callback_data='send_prices_now')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(message, reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در به‌روزرسانی اخبار: {e}")
+            await query.edit_message_text(
+                "❌ متأسفانه در به‌روزرسانی اخبار خطایی رخ داد."
+            )
+
+    async def forex_news_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دستور /forexnews - ارسال اخبار جهانی (فارکس فکتوری)"""
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        user_id = update.effective_user.id
+
+        # دریافت message object (چه از command باشه چه از keyboard button)
+        message = update.message or update.effective_message
+
+        # ارسال پیام در حال پردازش
+        processing_msg = await message.reply_text("⏳ در حال دریافت اخبار جهانی...")
+
+        try:
+            # دریافت اخبار روز
+            news_message = await forex_news_fetcher.get_daily_news()
+
+            if not news_message:
+                await processing_msg.edit_text(
+                    "❌ متأسفانه در دریافت اخبار جهانی خطایی رخ داد. لطفاً بعداً دوباره تلاش کنید."
+                )
+                return
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("📅 اخبار هفته", callback_data='forex_weekly_news')],
+                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_forex_news')],
+                [InlineKeyboardButton("💰 مشاهده قیمت‌ها", callback_data='send_prices_now')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # حذف پیام پردازش و ارسال پیام اصلی
+            await processing_msg.delete()
+            await message.reply_text(news_message, parse_mode='Markdown', reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'forex_news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت اخبار جهانی: {e}")
+            import traceback
+            traceback.print_exc()
+            await processing_msg.edit_text(
+                "❌ متأسفانه در دریافت اخبار جهانی خطایی رخ داد. لطفاً دوباره تلاش کنید."
+            )
+
+    async def refresh_forex_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای به‌روزرسانی اخبار جهانی"""
+        query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        await query.answer("در حال به‌روزرسانی اخبار جهانی...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت اخبار روز
+            news_message = await forex_news_fetcher.get_daily_news()
+
+            if not news_message:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار جهانی خطایی رخ داد."
+                )
+                return
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("📅 اخبار هفته", callback_data='forex_weekly_news')],
+                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_forex_news')],
+                [InlineKeyboardButton("💰 مشاهده قیمت‌ها", callback_data='send_prices_now')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(news_message, parse_mode='Markdown', reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'forex_news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در به‌روزرسانی اخبار جهانی: {e}")
+            import traceback
+            traceback.print_exc()
+            await query.edit_message_text(
+                "❌ متأسفانه در به‌روزرسانی اخبار جهانی خطایی رخ داد."
+            )
+
+    async def forex_weekly_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای نمایش اخبار هفتگی"""
+        query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        await query.answer("در حال دریافت اخبار هفته...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت اخبار هفته
+            news_message = await forex_news_fetcher.get_weekly_news()
+
+            if not news_message:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار هفتگی خطایی رخ داد."
+                )
+                return
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("📰 اخبار امروز", callback_data='refresh_forex_news')],
+                [InlineKeyboardButton("💰 مشاهده قیمت‌ها", callback_data='send_prices_now')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(news_message, parse_mode='Markdown', reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'forex_weekly_news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت اخبار هفتگی: {e}")
+            import traceback
+            traceback.print_exc()
+            await query.edit_message_text(
+                "❌ متأسفانه در دریافت اخبار هفتگی خطایی رخ داد."
+            )
 
     async def refresh_prices_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای به‌روزرسانی قیمت‌ها"""
@@ -1166,6 +1575,8 @@ class ArzalanBot:
 
         if text == '📤 ارسال قیمت الان':
             await self.send_prices(update, context)
+        elif text == '📰 اخبار':
+            await self.news_command(update, context)
         elif text == '🕒 تنظیم زمان ارسال روزانه پیام':
             # چک عضویت کاربر
             if not await self.require_membership(update, context):
@@ -1250,16 +1661,25 @@ class ArzalanBot:
             )
 
             # فرمت کردن پیام
-            message = price_fetcher.format_price_message(prices)
+            message, has_error = price_fetcher.format_price_message(prices)
 
             # ایجاد دکمه‌های inline
-            keyboard = [
-                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
-                [
-                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
-                    InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+            if has_error:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 تلاش مجدد", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
                 ]
-            ]
+            else:
+                keyboard = [
+                    [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='refresh_prices')],
+                    [
+                        InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                        InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
+                    ]
+                ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             await query.edit_message_text(message, reply_markup=reply_markup)
@@ -1394,16 +1814,10 @@ class ArzalanBot:
         except Exception as e:
             logger.error(f"خطا در ارسال گزارش برنامه‌ریزی شده: {e}")
 
-    def load_scheduled_notifications(self):
+    async def load_scheduled_notifications(self):
         """بارگذاری تمام زمان‌بندی‌های ذخیره شده"""
         try:
-            # استفاده از asyncio برای فراخوانی reload_all_schedules
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.reload_all_schedules())
-            loop.close()
-
+            await self.reload_all_schedules()
             logger.info("زمان‌بندی‌ها بارگذاری شدند")
 
         except Exception as e:
@@ -1884,18 +2298,76 @@ class ArzalanBot:
         # بازگشت به پنل ادمین
         await self.show_admin_panel(update, context)
 
+    async def set_bot_commands(self):
+        """تنظیم لیست دستورات بات برای نمایش در تلگرام"""
+        from telegram import BotCommand
+
+        commands = [
+            BotCommand("start", "شروع و نمایش منوی اصلی"),
+            BotCommand("news", "دریافت اخبار (کریپتو، اقتصاد جهانی، امنیت)"),
+            BotCommand("help", "راهنمای استفاده از ربات"),
+            BotCommand("settings", "تنظیمات شخصی"),
+        ]
+
+        await self.application.bot.set_my_commands(commands)
+        logger.info("✅ Command hints تنظیم شدند")
+
     async def run(self):
         """اجرای ربات"""
         # ساخت Application
         self.application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+        # تنظیم command hints
+        await self.set_bot_commands()
+
+        # دریافت x-signature برای اخبار جهانی (اگر Playwright فعال باشه)
+        if forex_news_fetcher.use_playwright:
+            logger.info("🌍 در حال دریافت x-signature برای اخبار جهانی...")
+            try:
+                await forex_news_fetcher.get_x_signature()
+                if forex_news_fetcher.x_signature:
+                    logger.info("✅ x-signature با موفقیت دریافت شد")
+                else:
+                    logger.warning("⚠️ x-signature دریافت نشد - اخبار جهانی موقتاً در دسترس نخواهد بود")
+            except Exception as e:
+                logger.error(f"❌ خطا در دریافت x-signature: {e}")
+        else:
+            logger.info("⚠️ Playwright غیرفعال است - اخبار جهانی موقتاً در دسترس نخواهد بود")
 
         # Handler ها
         self.application.add_handler(CommandHandler('start', self.start_command))
         self.application.add_handler(CommandHandler('help', self.help_command))
         self.application.add_handler(CommandHandler('settings', self.settings_command))
         self.application.add_handler(CommandHandler('admin', self.admin_panel_command))
+        self.application.add_handler(CommandHandler('news', self.news_command))
+        self.application.add_handler(CommandHandler('forexnews', self.forex_news_command))
 
         # Callback handlers
+        # News callbacks
+        self.application.add_handler(CallbackQueryHandler(
+            self.news_menu_callback, pattern='^news_menu$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.crypto_news_callback, pattern='^news_crypto$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.global_news_callback, pattern='^news_global$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.security_news_callback, pattern='^news_security$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.global_weekly_news_callback, pattern='^global_weekly_news$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.refresh_news_callback, pattern='^refresh_news$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.refresh_forex_news_callback, pattern='^refresh_forex_news$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.forex_weekly_news_callback, pattern='^forex_weekly_news$'
+        ))
         self.application.add_handler(CallbackQueryHandler(
             self.check_membership_callback, pattern='^check_membership$'
         ))
@@ -2035,7 +2507,7 @@ class ArzalanBot:
         ))
 
         # بارگذاری زمان‌بندی‌های ذخیره شده
-        self.load_scheduled_notifications()
+        await self.load_scheduled_notifications()
 
         # اجرای ربات
         logger.info("ربات دستیار ارزَلان در حال اجرا است...")
