@@ -257,7 +257,7 @@ class ForexNewsFetcher:
                         msg_lines.append(f"{ev['color']} {ev['currency']} {ev['time']} - {ev['name_fa']}")
                     msg_lines.append("")
 
-            msg_lines.append("─" * 35)
+            msg_lines.append("─" * 3)
             msg_lines.append("منبع: ForexFactory.live")
             msg_lines.append("")
             msg_lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
@@ -340,7 +340,7 @@ class ForexNewsFetcher:
 
                 msg_lines.append("")
 
-            msg_lines.append("─" * 35)
+            msg_lines.append("─" * 3)
             msg_lines.append("منبع: ForexFactory.live")
             msg_lines.append("")
             msg_lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")

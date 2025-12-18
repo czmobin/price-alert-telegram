@@ -249,7 +249,7 @@ class NewsFetcher:
         """
         lines = []
         lines.append("📰 خلاصه اخبار کریپتو امروز")
-        lines.append("─" * 35)
+        lines.append("─" * 3)
         lines.append("")
 
         # لیست لینک‌ها برای نمایش در انتها
@@ -342,14 +342,14 @@ class NewsFetcher:
 
         # لینک‌های منابع
         if links:
-            lines.append("─" * 35)
+            lines.append("─" * 3)
             lines.append("🔗 منابع خبری:")
             for link in links:
                 lines.append(link)
             lines.append("")
 
         # زمان به‌روزرسانی
-        lines.append("─" * 35)
+        lines.append("─" * 3)
         now = datetime.now()
         lines.append(f"🕐 {now.strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append("")
