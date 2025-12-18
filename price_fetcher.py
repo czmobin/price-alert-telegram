@@ -10,6 +10,7 @@ from config import (
     FIAT_CURRENCIES, GOLD_COINS, GOLD_ITEMS
 )
 from bonbast_monitor import BonbastScraper
+from jdatetime import jalalidatetime
 
 
 class PriceFetcher:
@@ -675,9 +676,8 @@ class PriceFetcher:
             tuple: (پیام فرمت شده, آیا خطایی وجود داشته)
         """
         lines = []
-        lines.append("گزارش قیمت‌های لحظه‌ای با ارزَلان:")
+        lines.append("📊 وضعیت بازار همین لحظه با ارزَلان")
         lines.append("")
-
         has_error = False
 
         # 1. دلار آمریکا
@@ -753,7 +753,7 @@ class PriceFetcher:
         # زمان به‌روزرسانی
         lines.append("")
         lines.append("─" * 3)
-        now = datetime.now()
+        now = jalalidatetime.now()
         lines.append(f"🕐 {now.strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append("")
         lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
