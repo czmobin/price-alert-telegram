@@ -10,7 +10,7 @@ from config import (
     FIAT_CURRENCIES, GOLD_COINS, GOLD_ITEMS
 )
 from bonbast_monitor import BonbastScraper
-from jdatetime import jalalidatetime
+from jdatetime import datetime as jalalidatetime
 
 
 class PriceFetcher:
