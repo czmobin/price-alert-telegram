@@ -722,7 +722,7 @@ class PriceFetcher:
                     change_toman_str = self.format_percentage_compact(change_24h_toman)
                     emoji_toman = self.get_trend_emoji(change_24h_toman)
                     lines.append(f"{emoji_toman} {symbol} IRT: {price_toman} (24h: {change_toman_str})")
-                    lines.append(f"{\n}")
+                    lines.append(f"\n")
 
         # 5. سکه‌های طلا
         if prices.get('gold_coins'):
