@@ -710,8 +710,10 @@ class PriceFetcher:
                     change_24h_toman = data.get('change_24h_toman', change_24h)
                     change_toman_str = self.format_percentage_compact(change_24h_toman)
                     lines.append(f"{emoji} {symbol}: ${price_usd} | {price_toman} تومان (24h: {change_str} | {change_toman_str})")
+                    lines.append(f"{\n}")
                 else:
                     lines.append(f"{emoji} {symbol}: ${price_usd} (24h: {change_str})")
+                    lines.append(f"{\n}")
 
         # 5. سکه‌های طلا
         if prices.get('gold_coins'):
@@ -742,7 +744,7 @@ class PriceFetcher:
 
         # زمان به‌روزرسانی
         lines.append("")
-        lines.append("─" * 35)
+        lines.append("─" * 3)
         now = datetime.now()
         lines.append(f"🕐 {now.strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append("")
