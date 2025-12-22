@@ -11,6 +11,7 @@ from config import (
 )
 from bonbast_monitor import BonbastScraper
 from jdatetime import datetime as jalalidatetime
+from constants import BotConstants
 
 
 class PriceFetcher:
@@ -304,7 +305,7 @@ class PriceFetcher:
 
     def get_silver_price(self) -> Optional[Dict]:
         """
-        دریافت قیمت نقره
+        دریافت قیمت نقره جهانی
 
         Returns:
             dict: {'price': 24.50, 'change_7d': 1.5, 'unit': 'USD/oz'}
@@ -336,6 +337,43 @@ class PriceFetcher:
 
         except Exception as e:
             print(f"خطا در دریافت قیمت نقره: {e}")
+            return None
+
+    async def get_silver_price_iran(self) -> Optional[Dict]:
+        """
+        دریافت قیمت نقره در ایران (تومان)
+
+        محاسبه بر اساس: قیمت جهانی نقره × نرخ دلار
+
+        Returns:
+            dict: {'price': 125000, 'change_24h': 1.5, 'unit': 'تومان/گرم', 'symbol': '🥈'}
+        """
+        try:
+            # دریافت قیمت جهانی نقره (دلار به ازای اونس)
+            silver_global = self.get_silver_price()
+
+            # دریافت نرخ دلار (تومان)
+            usd_irr = await self.get_usd_irr_price()
+
+            if not silver_global or not usd_irr:
+                return None
+
+            # تبدیل اونس به گرم (1 اونس = 31.1035 گرم)
+            price_per_gram_usd = silver_global['price'] / 31.1035
+
+            # محاسبه قیمت به تومان
+            price_toman = price_per_gram_usd * usd_irr['price']
+
+            return {
+                'price': price_toman,
+                'change_24h': silver_global.get('change_24h', 0),
+                'change_7d': silver_global.get('change_7d', 0),
+                'unit': 'تومان/گرم',
+                'symbol': '🥈'
+            }
+
+        except Exception as e:
+            print(f"خطا در محاسبه قیمت نقره ایران: {e}")
             return None
 
     async def get_usd_irr_price(self) -> Optional[Dict]:
@@ -609,6 +647,7 @@ class PriceFetcher:
                 'cryptos': {...},
                 'gold': {...},
                 'silver': {...},
+                'silver_iran': {...},
                 'usd_irr': {...},
                 'fiat_currencies': {...},
                 'gold_coins': {...},
@@ -619,6 +658,7 @@ class PriceFetcher:
             'cryptos': {},
             'gold': None,
             'silver': None,
+            'silver_iran': None,
             'usd_irr': None,
             'fiat_currencies': {},
             'gold_coins': {},
@@ -643,13 +683,17 @@ class PriceFetcher:
         if include_gold:
             result['gold'] = self.get_gold_price()
 
-        # دریافت قیمت نقره
+        # دریافت قیمت نقره جهانی
         if include_silver:
             result['silver'] = self.get_silver_price()
 
         # دریافت قیمت دلار
         if include_usd:
             result['usd_irr'] = await self.get_usd_irr_price()
+
+        # دریافت قیمت نقره ایران (بعد از دریافت دلار)
+        if include_silver:
+            result['silver_iran'] = await self.get_silver_price_iran()
 
         # دریافت ارزهای فیات
         if fiat_currency_ids:
@@ -693,12 +737,10 @@ class PriceFetcher:
                 if item_id == 'gol18':
                     lines.append(f"{data['symbol']} {data['name']}: {self.format_number_no_decimal(data['price'])}")
 
-        # 3. نقره
-        if prices.get('silver') and prices['silver'] is not None:
-            silver = prices['silver']
-            change = self.format_percentage_compact(silver.get('change_24h', 0))
-            emoji = self.get_trend_emoji(silver.get('change_24h', 0))
-            lines.append(f"{emoji} نقره: ${self.format_number(silver['price'])} (24h: {change})")
+        # 3. نقره ایران (تومان)
+        if prices.get('silver_iran') and prices['silver_iran'] is not None:
+            silver_iran = prices['silver_iran']
+            lines.append(f"{silver_iran['symbol']} نقره (گرم): {self.format_number_no_decimal(silver_iran['price'])}")
 
         lines.append("")
 
@@ -750,14 +792,9 @@ class PriceFetcher:
                 buy = self.format_number_no_decimal(data['buy'])
                 lines.append(f"{name}: {buy}")
 
-        # زمان به‌روزرسانی
+        # Footer استاندارد
         lines.append("")
-        lines.append("─" * 3)
-        now = jalalidatetime.now()
-        lines.append(f"🕐 {now.strftime('%Y-%m-%d %H:%M:%S')}")
-        lines.append("")
-        lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
-        lines.append("@arzzalanbot")
+        lines.append(BotConstants.get_message_footer(include_divider=True))
 
         # بررسی اینکه آیا اصلا داده‌ای داریم یا نه
         if not prices.get('cryptos') and not prices.get('usd_irr') and not prices.get('gold_items'):

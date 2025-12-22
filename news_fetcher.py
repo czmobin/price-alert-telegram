@@ -8,6 +8,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
+from constants import BotConstants
 
 
 class NewsFetcher:
@@ -342,19 +343,15 @@ class NewsFetcher:
 
         # لینک‌های منابع
         if links:
-            lines.append("─" * 3)
+            lines.append("─" * 35)
             lines.append("🔗 منابع خبری:")
             for link in links:
                 lines.append(link)
             lines.append("")
 
-        # زمان به‌روزرسانی
-        lines.append("─" * 3)
-        now = datetime.now()
-        lines.append(f"🕐 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+        # Footer استاندارد
         lines.append("")
-        lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
-        lines.append("@arzzalanbot")
+        lines.append(BotConstants.get_message_footer(include_divider=True))
 
         return "\n".join(lines)
 
