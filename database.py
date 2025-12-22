@@ -1064,3 +1064,88 @@ class Database:
         except Exception as e:
             print(f"خطا در ثبت هشدار: {e}")
             return False
+
+    # ===== توابع ارسال پیام هدفمند =====
+
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """
+        دریافت لیست همه کاربران
+
+        Returns:
+            لیست دیکشنری کاربران
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT * FROM users')
+            users = [dict(row) for row in cursor.fetchall()]
+
+            conn.close()
+            return users
+        except Exception as e:
+            print(f"خطا در دریافت لیست کاربران: {e}")
+            return []
+
+    def get_users_by_timeframe(self, timeframe: str) -> List[Dict[str, Any]]:
+        """
+        دریافت کاربران بر اساس بازه زمانی آخرین فعالیت
+
+        Args:
+            timeframe: بازه زمانی ('today', '48h', '3days', 'week', 'month')
+
+        Returns:
+            لیست کاربران فیلتر شده
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            # تعیین شرط WHERE بر اساس timeframe
+            if timeframe == 'today':
+                # کاربرهای امروز
+                condition = "DATE(last_interaction) = DATE('now', 'localtime')"
+            elif timeframe == '48h':
+                # کاربرهای 48 ساعت اخیر
+                condition = "last_interaction >= datetime('now', '-2 days')"
+            elif timeframe == '3days':
+                # کاربرهای 3 روز اخیر
+                condition = "last_interaction >= datetime('now', '-3 days')"
+            elif timeframe == 'week':
+                # کاربرهای هفته اخیر
+                condition = "last_interaction >= datetime('now', '-7 days')"
+            elif timeframe == 'month':
+                # کاربرهای ماه اخیر
+                condition = "last_interaction >= datetime('now', '-30 days')"
+            else:
+                # پیش‌فرض: همه کاربران فعال
+                condition = "is_active = 1"
+
+            query = f'''
+                SELECT * FROM users
+                WHERE {condition} AND is_active = 1
+                ORDER BY last_interaction DESC
+            '''
+
+            cursor.execute(query)
+            users = [dict(row) for row in cursor.fetchall()]
+
+            conn.close()
+            return users
+
+        except Exception as e:
+            print(f"خطا در فیلتر کاربران بر اساس بازه زمانی: {e}")
+            return []
+
+    def get_users_count_by_timeframe(self, timeframe: str) -> int:
+        """
+        دریافت تعداد کاربران بر اساس بازه زمانی
+
+        Args:
+            timeframe: بازه زمانی
+
+        Returns:
+            تعداد کاربران
+        """
+        users = self.get_users_by_timeframe(timeframe)
+        return len(users)
