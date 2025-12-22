@@ -5,7 +5,7 @@ import asyncio
 import logging
 import sys
 from datetime import datetime, time
-from typing import List
+from typing import List, Dict
 
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
@@ -33,6 +33,7 @@ from forex_news_fetcher import ForexNewsFetcher
 from security_news_fetcher import SecurityNewsFetcher
 from unified_news_fetcher import UnifiedNewsFetcher
 from constants import BotConstants
+from price_ceiling_monitor import PriceCeilingMonitor
 
 # تنظیم لاگ
 logging.basicConfig(
@@ -52,6 +53,7 @@ news_fetcher = NewsFetcher()
 forex_news_fetcher = ForexNewsFetcher()
 security_news_fetcher = SecurityNewsFetcher()
 unified_news_fetcher = UnifiedNewsFetcher()
+price_ceiling_monitor = PriceCeilingMonitor(db, price_fetcher)
 
 # تنظیم نمونه database برای BotConstants
 BotConstants.set_db_instance(db)
@@ -1821,6 +1823,92 @@ class ArzalanBot:
         except Exception as e:
             logger.error(f"خطا در بازنویسی زمان‌بندی‌ها: {e}")
 
+    # ===== توابع سیستم هشدار سقف قیمتی =====
+
+    async def check_price_ceilings(self, context: ContextTypes.DEFAULT_TYPE):
+        """
+        بررسی سقف قیمتی دارایی‌ها و ارسال هشدار در صورت شکست
+        (این تابع به‌صورت دوره‌ای توسط job queue اجرا می‌شود)
+        """
+        try:
+            logger.info("🔍 بررسی سقف قیمتی دارایی‌ها...")
+
+            # بررسی سقف قیمت‌ها
+            alerts = await price_ceiling_monitor.check_and_alert_all()
+
+            # ارسال هشدار برای دارایی‌هایی که سقفشان شکسته شده
+            for alert_info in alerts:
+                await self.send_ceiling_alert_to_users(context, alert_info)
+
+            if alerts:
+                logger.info(f"✅ {len(alerts)} هشدار سقف قیمتی ارسال شد")
+            else:
+                logger.info("ℹ️ سقف قیمتی شکسته نشد")
+
+        except Exception as e:
+            logger.error(f"❌ خطا در بررسی سقف قیمتی: {e}")
+
+    async def send_ceiling_alert_to_users(self, context: ContextTypes.DEFAULT_TYPE, alert_info: Dict):
+        """
+        ارسال پیام هشدار سقف قیمتی به همه کاربران فعال
+
+        Args:
+            context: کانتکست تلگرام
+            alert_info: اطلاعات هشدار
+        """
+        try:
+            asset_type = alert_info['asset_type']
+            asset_id = alert_info['asset_id']
+            ceiling_price = alert_info['current_price']
+
+            # فرمت پیام هشدار
+            message = price_ceiling_monitor.format_ceiling_alert_message(alert_info)
+
+            # دکمه‌های inline
+            keyboard = [
+                [
+                    InlineKeyboardButton("💰 دریافت قیمت‌ها", callback_data='send_prices_now'),
+                    InlineKeyboardButton("📰 دریافت اخبار", callback_data='unified_news')
+                ],
+                [
+                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                    InlineKeyboardButton("⚙️ تنظیمات", callback_data='open_settings')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # دریافت لیست کاربران فعال
+            all_users = db.get_all_users()
+            active_users = [u for u in all_users if u.get('is_active', 1) == 1]
+
+            # شمارنده ارسال موفق
+            sent_count = 0
+
+            # ارسال به همه کاربران فعال
+            for user in active_users:
+                user_id = user['user_id']
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=message,
+                        reply_markup=reply_markup
+                    )
+                    sent_count += 1
+                    # تاخیر کوچک برای جلوگیری از محدودیت Telegram
+                    await asyncio.sleep(0.05)
+                except TelegramError as e:
+                    logger.warning(f"خطا در ارسال هشدار به {user_id}: {e}")
+                except Exception as e:
+                    logger.error(f"خطا در ارسال هشدار به {user_id}: {e}")
+
+            # ثبت ارسال هشدار در دیتابیس
+            db.record_ceiling_alert(asset_type, asset_id, ceiling_price, sent_count)
+
+            logger.info(f"🚨 هشدار سقف قیمتی {asset_type}/{asset_id} به {sent_count} کاربر ارسال شد")
+
+        except Exception as e:
+            logger.error(f"خطا در ارسال هشدار سقف قیمتی: {e}")
+
     async def send_scheduled_price(self, context: ContextTypes.DEFAULT_TYPE):
         """ارسال قیمت‌ها در زمان برنامه‌ریزی شده"""
         try:
@@ -2695,6 +2783,15 @@ class ArzalanBot:
 
         # بارگذاری زمان‌بندی‌های ذخیره شده
         await self.load_scheduled_notifications()
+
+        # راه‌اندازی سیستم رصد سقف قیمتی (هر 10 دقیقه یکبار)
+        self.application.job_queue.run_repeating(
+            self.check_price_ceilings,
+            interval=600,  # 10 دقیقه = 600 ثانیه
+            first=10,  # اولین چک بعد از 10 ثانیه
+            name='price_ceiling_monitor'
+        )
+        logger.info("🔔 سیستم رصد سقف قیمتی فعال شد (هر 10 دقیقه)")
 
         # اجرای ربات
         logger.info("ربات دستیار ارزَلان در حال اجرا است...")
