@@ -23,8 +23,8 @@ class PriceCeilingMonitor:
         """
         self.db = db
         self.price_fetcher = price_fetcher
-        # حداقل فاصله بین دو هشدار برای هر دارایی (6 ساعت)
-        self.min_alert_interval = timedelta(hours=6)
+        # حداقل فاصله بین دو هشدار برای هر دارایی (24 ساعت = 1 روز)
+        self.min_alert_interval = timedelta(hours=24)
 
     async def check_and_alert_all(self) -> List[Dict]:
         """
