@@ -119,6 +119,55 @@ class Database:
             VALUES ('footer_username', '@arzzalanbot')
         ''')
 
+        # جدول تاریخچه قیمت‌ها (برای سیستم هشدار سقف قیمتی)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS price_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_type TEXT NOT NULL,
+                asset_id TEXT NOT NULL,
+                price REAL NOT NULL,
+                recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # ایجاد ایندکس برای جستجوی سریع تاریخچه قیمت‌ها
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_price_history_asset_time
+            ON price_history(asset_type, asset_id, recorded_at)
+        ''')
+
+        # جدول سقف قیمتی (ذخیره بالاترین قیمت تاریخی)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS price_ceilings (
+                asset_type TEXT NOT NULL,
+                asset_id TEXT NOT NULL,
+                ceiling_price REAL NOT NULL,
+                previous_ceiling REAL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (asset_type, asset_id)
+            )
+        ''')
+
+        # جدول هشدارهای سقف قیمتی ارسال شده
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ceiling_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_type TEXT NOT NULL,
+                asset_id TEXT NOT NULL,
+                ceiling_price REAL NOT NULL,
+                alerted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                recipients_count INTEGER DEFAULT 0
+            )
+        ''')
+
+        # مقداردهی اولیه سقف قیمت‌ها (با قیمت‌های اولیه)
+        cursor.execute('''
+            INSERT OR IGNORE INTO price_ceilings (asset_type, asset_id, ceiling_price)
+            VALUES
+                ('usd', 'usd_irr', 0),
+                ('gold', 'gol18', 0)
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -817,3 +866,286 @@ class Database:
         except Exception as e:
             print(f"خطا در تغییر وضعیت زمان‌بندی: {e}")
             return False
+
+    # ===== توابع سیستم هشدار سقف قیمتی =====
+
+    def save_price_snapshot(self, asset_type: str, asset_id: str, price: float) -> bool:
+        """
+        ذخیره یک snapshot از قیمت در تاریخچه
+
+        Args:
+            asset_type: نوع دارایی ('usd', 'gold', 'crypto')
+            asset_id: شناسه دارایی ('usd_irr', 'gol18', 'bitcoin')
+            price: قیمت فعلی
+
+        Returns:
+            bool: موفقیت‌آمیز بودن عملیات
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT INTO price_history (asset_type, asset_id, price)
+                VALUES (?, ?, ?)
+            ''', (asset_type, asset_id, price))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در ذخیره قیمت: {e}")
+            return False
+
+    def get_historical_price(self, asset_type: str, asset_id: str, hours_ago: int) -> Optional[float]:
+        """
+        دریافت قیمت تاریخی (مثلاً 24 ساعت، 7 روز یا 30 روز قبل)
+
+        Args:
+            asset_type: نوع دارایی
+            asset_id: شناسه دارایی
+            hours_ago: چند ساعت قبل
+
+        Returns:
+            float: قیمت تاریخی یا None
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT price
+                FROM price_history
+                WHERE asset_type = ? AND asset_id = ?
+                    AND recorded_at <= datetime('now', ? || ' hours')
+                ORDER BY ABS(
+                    (julianday(recorded_at) - julianday(datetime('now', ? || ' hours'))) * 24
+                )
+                LIMIT 1
+            ''', (asset_type, asset_id, f'-{hours_ago}', f'-{hours_ago}'))
+
+            row = cursor.fetchone()
+            conn.close()
+
+            return row['price'] if row else None
+        except Exception as e:
+            print(f"خطا در دریافت قیمت تاریخی: {e}")
+            return None
+
+    def get_price_ceiling(self, asset_type: str, asset_id: str) -> Optional[float]:
+        """
+        دریافت سقف قیمتی تاریخی
+
+        Args:
+            asset_type: نوع دارایی
+            asset_id: شناسه دارایی
+
+        Returns:
+            float: سقف قیمتی یا None
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT ceiling_price
+                FROM price_ceilings
+                WHERE asset_type = ? AND asset_id = ?
+            ''', (asset_type, asset_id))
+
+            row = cursor.fetchone()
+            conn.close()
+
+            return row['ceiling_price'] if row else None
+        except Exception as e:
+            print(f"خطا در دریافت سقف قیمتی: {e}")
+            return None
+
+    def update_price_ceiling(self, asset_type: str, asset_id: str, new_ceiling: float) -> bool:
+        """
+        به‌روزرسانی سقف قیمتی
+
+        Args:
+            asset_type: نوع دارایی
+            asset_id: شناسه دارایی
+            new_ceiling: سقف قیمتی جدید
+
+        Returns:
+            bool: موفقیت‌آمیز بودن عملیات
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            # ابتدا سقف قبلی را بگیر
+            cursor.execute('''
+                SELECT ceiling_price
+                FROM price_ceilings
+                WHERE asset_type = ? AND asset_id = ?
+            ''', (asset_type, asset_id))
+
+            row = cursor.fetchone()
+            previous_ceiling = row['ceiling_price'] if row else 0
+
+            # به‌روزرسانی سقف
+            cursor.execute('''
+                INSERT OR REPLACE INTO price_ceilings
+                (asset_type, asset_id, ceiling_price, previous_ceiling, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (asset_type, asset_id, new_ceiling, previous_ceiling))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در به‌روزرسانی سقف قیمتی: {e}")
+            return False
+
+    def get_last_ceiling_alert_time(self, asset_type: str, asset_id: str) -> Optional[datetime]:
+        """
+        دریافت آخرین زمان ارسال هشدار سقف قیمتی
+
+        Args:
+            asset_type: نوع دارایی
+            asset_id: شناسه دارایی
+
+        Returns:
+            datetime: زمان آخرین هشدار یا None
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT alerted_at
+                FROM ceiling_alerts
+                WHERE asset_type = ? AND asset_id = ?
+                ORDER BY alerted_at DESC
+                LIMIT 1
+            ''', (asset_type, asset_id))
+
+            row = cursor.fetchone()
+            conn.close()
+
+            if row:
+                return datetime.fromisoformat(row['alerted_at'])
+            return None
+        except Exception as e:
+            print(f"خطا در دریافت زمان آخرین هشدار: {e}")
+            return None
+
+    def record_ceiling_alert(self, asset_type: str, asset_id: str,
+                           ceiling_price: float, recipients_count: int) -> bool:
+        """
+        ثبت ارسال هشدار سقف قیمتی
+
+        Args:
+            asset_type: نوع دارایی
+            asset_id: شناسه دارایی
+            ceiling_price: قیمت سقف شکسته شده
+            recipients_count: تعداد دریافت‌کنندگان
+
+        Returns:
+            bool: موفقیت‌آمیز بودن عملیات
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT INTO ceiling_alerts
+                (asset_type, asset_id, ceiling_price, recipients_count)
+                VALUES (?, ?, ?, ?)
+            ''', (asset_type, asset_id, ceiling_price, recipients_count))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در ثبت هشدار: {e}")
+            return False
+
+    # ===== توابع ارسال پیام هدفمند =====
+
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """
+        دریافت لیست همه کاربران
+
+        Returns:
+            لیست دیکشنری کاربران
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT * FROM users')
+            users = [dict(row) for row in cursor.fetchall()]
+
+            conn.close()
+            return users
+        except Exception as e:
+            print(f"خطا در دریافت لیست کاربران: {e}")
+            return []
+
+    def get_users_by_timeframe(self, timeframe: str) -> List[Dict[str, Any]]:
+        """
+        دریافت کاربران بر اساس بازه زمانی آخرین فعالیت
+
+        Args:
+            timeframe: بازه زمانی ('today', '48h', '3days', 'week', 'month')
+
+        Returns:
+            لیست کاربران فیلتر شده
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            # تعیین شرط WHERE بر اساس timeframe
+            if timeframe == 'today':
+                # کاربرهای امروز
+                condition = "DATE(last_interaction) = DATE('now', 'localtime')"
+            elif timeframe == '48h':
+                # کاربرهای 48 ساعت اخیر
+                condition = "last_interaction >= datetime('now', '-2 days')"
+            elif timeframe == '3days':
+                # کاربرهای 3 روز اخیر
+                condition = "last_interaction >= datetime('now', '-3 days')"
+            elif timeframe == 'week':
+                # کاربرهای هفته اخیر
+                condition = "last_interaction >= datetime('now', '-7 days')"
+            elif timeframe == 'month':
+                # کاربرهای ماه اخیر
+                condition = "last_interaction >= datetime('now', '-30 days')"
+            else:
+                # پیش‌فرض: همه کاربران فعال
+                condition = "is_active = 1"
+
+            query = f'''
+                SELECT * FROM users
+                WHERE {condition} AND is_active = 1
+                ORDER BY last_interaction DESC
+            '''
+
+            cursor.execute(query)
+            users = [dict(row) for row in cursor.fetchall()]
+
+            conn.close()
+            return users
+
+        except Exception as e:
+            print(f"خطا در فیلتر کاربران بر اساس بازه زمانی: {e}")
+            return []
+
+    def get_users_count_by_timeframe(self, timeframe: str) -> int:
+        """
+        دریافت تعداد کاربران بر اساس بازه زمانی
+
+        Args:
+            timeframe: بازه زمانی
+
+        Returns:
+            تعداد کاربران
+        """
+        users = self.get_users_by_timeframe(timeframe)
+        return len(users)

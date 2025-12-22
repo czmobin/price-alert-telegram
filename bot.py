@@ -5,7 +5,7 @@ import asyncio
 import logging
 import sys
 from datetime import datetime, time
-from typing import List
+from typing import List, Dict
 
 
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
@@ -33,6 +33,7 @@ from forex_news_fetcher import ForexNewsFetcher
 from security_news_fetcher import SecurityNewsFetcher
 from unified_news_fetcher import UnifiedNewsFetcher
 from constants import BotConstants
+from price_ceiling_monitor import PriceCeilingMonitor
 
 # تنظیم لاگ
 logging.basicConfig(
@@ -44,6 +45,7 @@ logger = logging.getLogger(__name__)
 # وضعیت‌های مکالمه
 WAITING_FOR_TIME = range(1)
 WAITING_FOR_BROADCAST_MESSAGE = range(1)
+WAITING_FOR_TARGETED_BROADCAST_MESSAGE = range(1)
 
 # نمونه‌های global
 db = Database()
@@ -52,6 +54,7 @@ news_fetcher = NewsFetcher()
 forex_news_fetcher = ForexNewsFetcher()
 security_news_fetcher = SecurityNewsFetcher()
 unified_news_fetcher = UnifiedNewsFetcher()
+price_ceiling_monitor = PriceCeilingMonitor(db, price_fetcher)
 
 # تنظیم نمونه database برای BotConstants
 BotConstants.set_db_instance(db)
@@ -1821,6 +1824,92 @@ class ArzalanBot:
         except Exception as e:
             logger.error(f"خطا در بازنویسی زمان‌بندی‌ها: {e}")
 
+    # ===== توابع سیستم هشدار سقف قیمتی =====
+
+    async def check_price_ceilings(self, context: ContextTypes.DEFAULT_TYPE):
+        """
+        بررسی سقف قیمتی دارایی‌ها و ارسال هشدار در صورت شکست
+        (این تابع به‌صورت دوره‌ای توسط job queue اجرا می‌شود)
+        """
+        try:
+            logger.info("🔍 بررسی سقف قیمتی دارایی‌ها...")
+
+            # بررسی سقف قیمت‌ها
+            alerts = await price_ceiling_monitor.check_and_alert_all()
+
+            # ارسال هشدار برای دارایی‌هایی که سقفشان شکسته شده
+            for alert_info in alerts:
+                await self.send_ceiling_alert_to_users(context, alert_info)
+
+            if alerts:
+                logger.info(f"✅ {len(alerts)} هشدار سقف قیمتی ارسال شد")
+            else:
+                logger.info("ℹ️ سقف قیمتی شکسته نشد")
+
+        except Exception as e:
+            logger.error(f"❌ خطا در بررسی سقف قیمتی: {e}")
+
+    async def send_ceiling_alert_to_users(self, context: ContextTypes.DEFAULT_TYPE, alert_info: Dict):
+        """
+        ارسال پیام هشدار سقف قیمتی به همه کاربران فعال
+
+        Args:
+            context: کانتکست تلگرام
+            alert_info: اطلاعات هشدار
+        """
+        try:
+            asset_type = alert_info['asset_type']
+            asset_id = alert_info['asset_id']
+            ceiling_price = alert_info['current_price']
+
+            # فرمت پیام هشدار
+            message = price_ceiling_monitor.format_ceiling_alert_message(alert_info)
+
+            # دکمه‌های inline
+            keyboard = [
+                [
+                    InlineKeyboardButton("💰 دریافت قیمت‌ها", callback_data='send_prices_now'),
+                    InlineKeyboardButton("📰 دریافت اخبار", callback_data='unified_news')
+                ],
+                [
+                    InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
+                    InlineKeyboardButton("⚙️ تنظیمات", callback_data='open_settings')
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # دریافت لیست کاربران فعال
+            all_users = db.get_all_users()
+            active_users = [u for u in all_users if u.get('is_active', 1) == 1]
+
+            # شمارنده ارسال موفق
+            sent_count = 0
+
+            # ارسال به همه کاربران فعال
+            for user in active_users:
+                user_id = user['user_id']
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=message,
+                        reply_markup=reply_markup
+                    )
+                    sent_count += 1
+                    # تاخیر کوچک برای جلوگیری از محدودیت Telegram
+                    await asyncio.sleep(0.05)
+                except TelegramError as e:
+                    logger.warning(f"خطا در ارسال هشدار به {user_id}: {e}")
+                except Exception as e:
+                    logger.error(f"خطا در ارسال هشدار به {user_id}: {e}")
+
+            # ثبت ارسال هشدار در دیتابیس
+            db.record_ceiling_alert(asset_type, asset_id, ceiling_price, sent_count)
+
+            logger.info(f"🚨 هشدار سقف قیمتی {asset_type}/{asset_id} به {sent_count} کاربر ارسال شد")
+
+        except Exception as e:
+            logger.error(f"خطا در ارسال هشدار سقف قیمتی: {e}")
+
     async def send_scheduled_price(self, context: ContextTypes.DEFAULT_TYPE):
         """ارسال قیمت‌ها در زمان برنامه‌ریزی شده"""
         try:
@@ -1933,6 +2022,7 @@ class ArzalanBot:
             [InlineKeyboardButton("👤 کاربران اخیر", callback_data='admin_recent_users')],
             [InlineKeyboardButton("✏️ ویرایش Footer", callback_data='admin_edit_footer')],
             [InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data='admin_broadcast')],
+            [InlineKeyboardButton("📮 ارسال پیام هدفمند", callback_data='admin_targeted_broadcast')],
             [InlineKeyboardButton("🔙 بستن پنل", callback_data='admin_close')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -2477,6 +2567,274 @@ class ArzalanBot:
         # بازگشت به پنل ادمین
         await self.show_admin_panel(update, context)
 
+    # ===== توابع ارسال پیام هدفمند =====
+
+    async def admin_targeted_broadcast_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش منوی انتخاب بازه زمانی برای ارسال پیام هدفمند"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت تعداد کاربران برای هر بازه
+        today_count = db.get_users_count_by_timeframe('today')
+        h48_count = db.get_users_count_by_timeframe('48h')
+        days3_count = db.get_users_count_by_timeframe('3days')
+        week_count = db.get_users_count_by_timeframe('week')
+        month_count = db.get_users_count_by_timeframe('month')
+
+        message = f"""📮 ارسال پیام هدفمند
+
+لطفاً بازه زمانی مورد نظر را انتخاب کنید:
+
+📊 آمار کاربران فعال:
+• امروز: {today_count:,} کاربر
+• 48 ساعت اخیر: {h48_count:,} کاربر
+• 3 روز اخیر: {days3_count:,} کاربر
+• هفته اخیر: {week_count:,} کاربر
+• ماه اخیر: {month_count:,} کاربر"""
+
+        keyboard = [
+            [InlineKeyboardButton(f"📅 امروز ({today_count:,})", callback_data='targeted_timeframe_today')],
+            [InlineKeyboardButton(f"⏰ 48 ساعت اخیر ({h48_count:,})", callback_data='targeted_timeframe_48h')],
+            [InlineKeyboardButton(f"📆 3 روز اخیر ({days3_count:,})", callback_data='targeted_timeframe_3days')],
+            [InlineKeyboardButton(f"📅 هفته اخیر ({week_count:,})", callback_data='targeted_timeframe_week')],
+            [InlineKeyboardButton(f"📊 ماه اخیر ({month_count:,})", callback_data='targeted_timeframe_month')],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+    async def admin_targeted_timeframe_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """انتخاب بازه زمانی و درخواست پیام"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # استخراج بازه زمانی از callback_data
+        timeframe = query.data.replace('targeted_timeframe_', '')
+
+        # دریافت تعداد کاربران
+        users_count = db.get_users_count_by_timeframe(timeframe)
+
+        # نقشه برای نمایش فارسی
+        timeframe_names = {
+            'today': 'امروز',
+            '48h': '48 ساعت اخیر',
+            '3days': '3 روز اخیر',
+            'week': 'هفته اخیر',
+            'month': 'ماه اخیر'
+        }
+
+        timeframe_name = timeframe_names.get(timeframe, timeframe)
+
+        message = f"""📮 ارسال پیام به کاربران {timeframe_name}
+
+تعداد کاربران: {users_count:,}
+
+لطفاً پیامی که می‌خواهید برای این گروه ارسال شود را بنویسید.
+
+⚠️ توجه:
+• پیام برای {users_count:,} کاربر {timeframe_name} ارسال می‌شود
+• می‌توانید متن، عکس، ویدیو یا فایل ارسال کنید
+• برای لغو، /cancel را ارسال کنید"""
+
+        keyboard = [
+            [InlineKeyboardButton("❌ لغو", callback_data='admin_targeted_broadcast')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
+        # ذخیره بازه زمانی و وضعیت در context
+        context.user_data['targeted_timeframe'] = timeframe
+        context.user_data['waiting_for_targeted_broadcast'] = True
+
+    async def receive_targeted_broadcast_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دریافت پیام برای ارسال هدفمند"""
+        # چک اینکه آیا در حالت انتظار برای targeted broadcast هستیم
+        if not context.user_data.get('waiting_for_targeted_broadcast'):
+            return
+
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            return
+
+        # ذخیره پیام در context
+        context.user_data['targeted_broadcast_message'] = update.message
+        context.user_data['waiting_for_targeted_broadcast'] = False
+
+        # دریافت بازه زمانی و تعداد کاربران
+        timeframe = context.user_data.get('targeted_timeframe', '')
+        users_count = db.get_users_count_by_timeframe(timeframe)
+
+        timeframe_names = {
+            'today': 'امروز',
+            '48h': '48 ساعت اخیر',
+            '3days': '3 روز اخیر',
+            'week': 'هفته اخیر',
+            'month': 'ماه اخیر'
+        }
+        timeframe_name = timeframe_names.get(timeframe, timeframe)
+
+        preview_message = f"""✅ پیام دریافت شد!
+
+📊 این پیام برای {users_count:,} کاربر {timeframe_name} ارسال خواهد شد.
+
+آیا از ارسال این پیام اطمینان دارید؟"""
+
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ بله، ارسال شود", callback_data='admin_targeted_broadcast_confirm'),
+                InlineKeyboardButton("❌ لغو", callback_data='admin_targeted_broadcast_cancel')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(preview_message, reply_markup=reply_markup)
+
+    async def admin_targeted_broadcast_confirm_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """تایید و ارسال پیام هدفمند"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت پیام و بازه زمانی از context
+        broadcast_message = context.user_data.get('targeted_broadcast_message')
+        timeframe = context.user_data.get('targeted_timeframe')
+
+        if not broadcast_message or not timeframe:
+            await query.edit_message_text("❌ خطا: اطلاعات لازم یافت نشد.")
+            return
+
+        # نمایش پیام در حال ارسال
+        await query.edit_message_text("⏳ در حال ارسال پیام به کاربران...")
+
+        # دریافت لیست کاربران بر اساس بازه زمانی
+        users = db.get_users_by_timeframe(timeframe)
+        user_ids = [u['user_id'] for u in users]
+
+        # ارسال پیام به کاربران
+        success_count = 0
+        failed_count = 0
+
+        for target_user_id in user_ids:
+            try:
+                # ارسال پیام بر اساس نوع
+                if broadcast_message.text:
+                    await context.bot.send_message(
+                        chat_id=target_user_id,
+                        text=broadcast_message.text
+                    )
+                elif broadcast_message.photo:
+                    await context.bot.send_photo(
+                        chat_id=target_user_id,
+                        photo=broadcast_message.photo[-1].file_id,
+                        caption=broadcast_message.caption
+                    )
+                elif broadcast_message.video:
+                    await context.bot.send_video(
+                        chat_id=target_user_id,
+                        video=broadcast_message.video.file_id,
+                        caption=broadcast_message.caption
+                    )
+                elif broadcast_message.document:
+                    await context.bot.send_document(
+                        chat_id=target_user_id,
+                        document=broadcast_message.document.file_id,
+                        caption=broadcast_message.caption
+                    )
+                elif broadcast_message.audio:
+                    await context.bot.send_audio(
+                        chat_id=target_user_id,
+                        audio=broadcast_message.audio.file_id,
+                        caption=broadcast_message.caption
+                    )
+                elif broadcast_message.voice:
+                    await context.bot.send_voice(
+                        chat_id=target_user_id,
+                        voice=broadcast_message.voice.file_id,
+                        caption=broadcast_message.caption
+                    )
+
+                success_count += 1
+                # تاخیر کوچک برای جلوگیری از محدودیت Telegram
+                await asyncio.sleep(0.05)
+
+            except TelegramError as e:
+                failed_count += 1
+                logger.warning(f"خطا در ارسال پیام به {target_user_id}: {e}")
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"خطا در ارسال پیام به {target_user_id}: {e}")
+
+        # نمایش نتیجه
+        timeframe_names = {
+            'today': 'امروز',
+            '48h': '48 ساعت اخیر',
+            '3days': '3 روز اخیر',
+            'week': 'هفته اخیر',
+            'month': 'ماه اخیر'
+        }
+        timeframe_name = timeframe_names.get(timeframe, timeframe)
+
+        result_message = f"""✅ ارسال پیام هدفمند تکمیل شد
+
+📊 آمار ارسال:
+• بازه زمانی: {timeframe_name}
+• موفق: {success_count:,} کاربر
+• ناموفق: {failed_count:,} کاربر
+• کل: {len(user_ids):,} کاربر"""
+
+        keyboard = [
+            [InlineKeyboardButton("🔙 بازگشت به پنل", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(result_message, reply_markup=reply_markup)
+
+        # پاک کردن وضعیت از context
+        context.user_data.pop('targeted_broadcast_message', None)
+        context.user_data.pop('targeted_timeframe', None)
+        context.user_data.pop('waiting_for_targeted_broadcast', None)
+
+        logger.info(f"✅ پیام هدفمند به {success_count} کاربر {timeframe_name} ارسال شد")
+
+    async def admin_targeted_broadcast_cancel_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """لغو ارسال پیام هدفمند"""
+        query = update.callback_query
+        await query.answer()
+
+        # پاک کردن وضعیت از context
+        context.user_data.pop('targeted_broadcast_message', None)
+        context.user_data.pop('targeted_timeframe', None)
+        context.user_data.pop('waiting_for_targeted_broadcast', None)
+
+        await query.edit_message_text("❌ ارسال پیام هدفمند لغو شد.")
+
+        # بازگشت به منوی انتخاب بازه
+        await self.admin_targeted_broadcast_callback(update, context)
+
     async def set_bot_commands(self):
         """تنظیم لیست دستورات بات برای نمایش در تلگرام"""
         from telegram import BotCommand
@@ -2674,6 +3032,19 @@ class ArzalanBot:
         self.application.add_handler(CallbackQueryHandler(
             self.admin_broadcast_cancel_callback, pattern='^admin_broadcast_cancel$'
         ))
+        # Targeted broadcast handlers
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_targeted_broadcast_callback, pattern='^admin_targeted_broadcast$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_targeted_timeframe_callback, pattern='^targeted_timeframe_'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_targeted_broadcast_confirm_callback, pattern='^admin_targeted_broadcast_confirm$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_targeted_broadcast_cancel_callback, pattern='^admin_targeted_broadcast_cancel$'
+        ))
         self.application.add_handler(CallbackQueryHandler(
             self.admin_edit_footer_callback, pattern='^admin_edit_footer$'
         ))
@@ -2693,8 +3064,23 @@ class ArzalanBot:
             self.receive_broadcast_message
         ))
 
+        # Handler برای دریافت انواع پیام برای targeted broadcast
+        self.application.add_handler(MessageHandler(
+            (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.AUDIO | filters.VOICE) & ~filters.COMMAND,
+            self.receive_targeted_broadcast_message
+        ))
+
         # بارگذاری زمان‌بندی‌های ذخیره شده
         await self.load_scheduled_notifications()
+
+        # راه‌اندازی سیستم رصد سقف قیمتی (هر 10 دقیقه یکبار)
+        self.application.job_queue.run_repeating(
+            self.check_price_ceilings,
+            interval=600,  # 10 دقیقه = 600 ثانیه
+            first=10,  # اولین چک بعد از 10 ثانیه
+            name='price_ceiling_monitor'
+        )
+        logger.info("🔔 سیستم رصد سقف قیمتی فعال شد (هر 10 دقیقه)")
 
         # اجرای ربات
         logger.info("ربات دستیار ارزَلان در حال اجرا است...")
