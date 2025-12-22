@@ -25,6 +25,50 @@ class PriceFetcher:
         self.bonbast_scraper = BonbastScraper()
         self._bonbast_cache = None
         self._bonbast_cache_time = None
+        self._use_tgju = True  # فعال‌سازی استفاده از API tgju
+
+    def _fetch_tgju_price(self, symbol: str, timeout: int = 5) -> Optional[Dict]:
+        """
+        دریافت قیمت از API tgju (سریع و بدون نیاز به مرورگر)
+
+        Args:
+            symbol: نماد مورد نظر (مثل PRICE_DOLLAR_RL, GERAM24, SILVER)
+            timeout: timeout برای درخواست
+
+        Returns:
+            dict: {'price': قیمت, 'change_24h': درصد تغییرات} یا None در صورت خطا
+        """
+        if not self._use_tgju:
+            return None
+
+        try:
+            url = f'https://platform.tgju.org/fa/tvdata/history?symbol={symbol}'
+            response = self.session.get(url, timeout=timeout)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                # بررسی وجود داده
+                if 'c' in data and len(data['c']) > 0:
+                    current_price = data['c'][-1]  # آخرین قیمت (Close)
+
+                    # محاسبه تغییرات 24 ساعته (اگر داده کافی داشتیم)
+                    change_24h = 0.0
+                    if len(data['c']) >= 2 and data['c'][-2] > 0:
+                        prev_price = data['c'][-2]
+                        change_24h = ((current_price - prev_price) / prev_price) * 100
+
+                    return {
+                        'price': current_price,
+                        'change_24h': change_24h
+                    }
+
+            return None
+
+        except Exception as e:
+            # در صورت خطا، بدون log کردن (تا کاربر متوجه نشود) None برمی‌گردانیم
+            # و سیستم به‌طور خودکار به fallback می‌رود
+            return None
 
     def safe_float(self, value, default: float = 0.0) -> float:
         """تبدیل امن به float با مدیریت None و مقادیر نامعتبر"""
@@ -305,13 +349,25 @@ class PriceFetcher:
 
     def get_silver_price(self) -> Optional[Dict]:
         """
-        دریافت قیمت نقره جهانی
+        دریافت قیمت نقره جهانی (با استفاده از tgju API و fallback به CoinGecko)
 
         Returns:
             dict: {'price': 24.50, 'change_7d': 1.5, 'unit': 'USD/oz'}
         """
         try:
-            # استفاده از توکن نقره در CoinGecko
+            # روش 1: استفاده از API سریع tgju
+            tgju_data = self._fetch_tgju_price('SILVER')
+            if tgju_data and tgju_data.get('price', 0) > 0:
+                # قیمت در tgju به دلار به ازای اونس است
+                return {
+                    'price': tgju_data['price'],
+                    'change_24h': tgju_data.get('change_24h', 0),
+                    'change_7d': 0,  # tgju فقط 24h داره
+                    'unit': 'USD/oz',
+                    'symbol': '🥈'
+                }
+
+            # روش 2 (fallback): استفاده از توکن نقره در CoinGecko
             url = f"{COINGECKO_API}/simple/price"
             params = {
                 'ids': 'silver-token',
@@ -341,18 +397,19 @@ class PriceFetcher:
 
     async def get_silver_price_iran(self) -> Optional[Dict]:
         """
-        دریافت قیمت نقره در ایران (تومان)
+        دریافت قیمت نقره در ایران (تومان) - با استفاده از tgju API
 
-        محاسبه بر اساس: قیمت جهانی نقره × نرخ دلار
+        محاسبه بر اساس: قیمت جهانی نقره (tgju) × نرخ دلار (tgju)
+        از tgju استفاده می‌کند (سریع و بدون نیاز به مرورگر)
 
         Returns:
             dict: {'price': 125000, 'change_24h': 1.5, 'unit': 'تومان/گرم', 'symbol': '🥈'}
         """
         try:
-            # دریافت قیمت جهانی نقره (دلار به ازای اونس)
+            # دریافت قیمت جهانی نقره (دلار به ازای اونس) - از tgju با fallback
             silver_global = self.get_silver_price()
 
-            # دریافت نرخ دلار (تومان)
+            # دریافت نرخ دلار (تومان) - از tgju با fallback
             usd_irr = await self.get_usd_irr_price()
 
             if not silver_global or not usd_irr:
@@ -378,15 +435,27 @@ class PriceFetcher:
 
     async def get_usd_irr_price(self) -> Optional[Dict]:
         """
-        دریافت قیمت دلار به تومان
+        دریافت قیمت دلار به تومان (با استفاده از tgju API و fallback به روش‌های قدیمی)
 
         Returns:
             dict: {'price': 580000, 'change_7d': -0.5}
         """
         try:
-            # استفاده از API tgju برای قیمت دلار
-            url = "https://api.accessban.com/v1/market/indicator/summary-table-data/price_dollar_rl"
+            # روش 1: استفاده از API سریع tgju (بدون نیاز به مرورگر)
+            tgju_data = self._fetch_tgju_price('PRICE_DOLLAR_RL')
+            if tgju_data and tgju_data.get('price', 0) > 0:
+                # قیمت در tgju به ریال است، تبدیل به تومان می‌کنیم
+                price_toman = tgju_data['price'] / 10
+                return {
+                    'price': price_toman,
+                    'change_24h': tgju_data.get('change_24h', 0),
+                    'change_7d': 0,  # tgju فقط 24h داره
+                    'unit': 'تومان',
+                    'symbol': '💵'
+                }
 
+            # روش 2 (fallback): استفاده از API accessban
+            url = "https://api.accessban.com/v1/market/indicator/summary-table-data/price_dollar_rl"
             response = self.session.get(url, timeout=10)
 
             if response.status_code == 200:
@@ -425,7 +494,7 @@ class PriceFetcher:
                             'symbol': '💵'
                         }
 
-            # روش جایگزین: استفاده از API bonbast (غیررسمی)
+            # روش 3 (fallback نهایی): استفاده از API bonbast (غیررسمی)
             return await self._get_usd_from_bonbast()
 
         except Exception as e:
@@ -604,27 +673,55 @@ class PriceFetcher:
 
     async def get_gold_items(self, item_ids: List[str]) -> Dict[str, Dict]:
         """
-        دریافت قیمت آیتم‌های طلا از bonbast
+        دریافت قیمت آیتم‌های طلا (با استفاده از tgju API و fallback به bonbast)
 
         Returns:
             dict: {'gol18': {'name': '...', 'price': 11306847}, ...}
         """
         try:
-            bonbast_data = await self._get_bonbast_data()
-
-            if not bonbast_data or 'gold' not in bonbast_data:
-                return {}
+            # نقشه‌برداری از item_id به نماد tgju
+            tgju_symbol_map = {
+                'gol18': 'GERAM18',
+                'mithqal': 'MESGHAL',
+                'ounce': 'GOLD'  # اونس طلا
+            }
 
             result = {}
+
+            # روش 1: استفاده از API سریع tgju
             for item_id in item_ids:
-                if item_id in bonbast_data['gold']:
-                    gold_data = bonbast_data['gold'][item_id]
-                    result[item_id] = {
-                        'name': gold_data['name'],
-                        'price': gold_data['price'],
-                        'unit': gold_data['unit'],
-                        'symbol': GOLD_ITEMS.get(item_id, {}).get('symbol', '✨')
-                    }
+                if item_id in tgju_symbol_map:
+                    tgju_data = self._fetch_tgju_price(tgju_symbol_map[item_id])
+                    if tgju_data and tgju_data.get('price', 0) > 0:
+                        # قیمت در tgju به تومان است
+                        result[item_id] = {
+                            'name': GOLD_ITEMS.get(item_id, {}).get('name', item_id),
+                            'price': tgju_data['price'],
+                            'unit': 'تومان',
+                            'symbol': GOLD_ITEMS.get(item_id, {}).get('symbol', '✨')
+                        }
+
+            # اگر همه آیتم‌ها با موفقیت دریافت شدند، برگردان
+            if len(result) == len(item_ids):
+                return result
+
+            # روش 2 (fallback): استفاده از bonbast برای آیتم‌های ناموفق
+            bonbast_data = await self._get_bonbast_data()
+
+            if bonbast_data and 'gold' in bonbast_data:
+                for item_id in item_ids:
+                    # اگر قبلاً از tgju گرفته شد، skip کن
+                    if item_id in result:
+                        continue
+
+                    if item_id in bonbast_data['gold']:
+                        gold_data = bonbast_data['gold'][item_id]
+                        result[item_id] = {
+                            'name': gold_data['name'],
+                            'price': gold_data['price'],
+                            'unit': gold_data['unit'],
+                            'symbol': GOLD_ITEMS.get(item_id, {}).get('symbol', '✨')
+                        }
 
             return result
 

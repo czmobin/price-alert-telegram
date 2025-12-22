@@ -181,30 +181,30 @@ class ArzalanBot:
 
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """نمایش منوی اصلی و ارسال قیمت‌ها"""
-        # نمایش منوی keyboard
-        await update.message.reply_text(
-            "منوی اصلی:",
+        # ارسال پیام جذاب در حال بارگذاری همراه با کیبورد
+        loading_msg = await update.message.reply_text(
+            "💰 ارزَلان در حال جمع‌آوری قیمت‌ها...\n📊 کمی صبر کنید، بازارهای جهانی را بررسی می‌کنیم...",
             reply_markup=self.get_main_menu_keyboard()
         )
 
         # ارسال قیمت‌ها
-        await self.send_prices(update, context, is_first_time=True)
+        await self.send_prices(update, context, is_first_time=True, loading_message=loading_msg)
 
     async def show_main_menu_after_callback(self, query, context: ContextTypes.DEFAULT_TYPE):
         """نمایش منوی اصلی بعد از callback"""
         user_id = query.from_user.id
 
-        # ارسال منوی keyboard
-        await context.bot.send_message(
+        # ارسال پیام جذاب در حال بارگذاری همراه با کیبورد
+        loading_msg = await context.bot.send_message(
             chat_id=user_id,
-            text="منوی اصلی:",
+            text="💰 ارزَلان در حال جمع‌آوری قیمت‌ها...\n📊 کمی صبر کنید، بازارهای جهانی را بررسی می‌کنیم...",
             reply_markup=self.get_main_menu_keyboard()
         )
 
         # ارسال قیمت‌ها
-        await self.send_prices_to_user(user_id, context, is_first_time=True)
+        await self.send_prices_to_user(user_id, context, is_first_time=True, loading_message=loading_msg)
 
-    async def send_prices(self, update: Update, context: ContextTypes.DEFAULT_TYPE, is_first_time: bool = False):
+    async def send_prices(self, update: Update, context: ContextTypes.DEFAULT_TYPE, is_first_time: bool = False, loading_message=None):
         """ارسال قیمت‌ها"""
         # چک عضویت کاربر
         if not await self.require_membership(update, context):
@@ -212,8 +212,11 @@ class ArzalanBot:
 
         user_id = update.effective_user.id
 
-        # ارسال پیام در حال پردازش
-        processing_msg = await update.message.reply_text("⏳ در حال دریافت قیمت‌ها...")
+        # ارسال پیام در حال پردازش (اگر پیام loading از قبل نداریم)
+        if loading_message is None:
+            processing_msg = await update.message.reply_text("⏳ در حال دریافت قیمت‌ها...")
+        else:
+            processing_msg = loading_message
 
         try:
             # دریافت تنظیمات کاربر
@@ -284,7 +287,7 @@ class ArzalanBot:
                 "❌ متأسفانه در دریافت قیمت‌ها خطایی رخ داد. لطفاً دوباره تلاش کنید."
             )
 
-    async def send_prices_to_user(self, user_id: int, context: ContextTypes.DEFAULT_TYPE, is_first_time: bool = False):
+    async def send_prices_to_user(self, user_id: int, context: ContextTypes.DEFAULT_TYPE, is_first_time: bool = False, loading_message=None):
         """ارسال قیمت‌ها به کاربر (برای callback)"""
         try:
             # دریافت تنظیمات کاربر
@@ -339,6 +342,13 @@ class ArzalanBot:
                     ]
                 ]
             reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # حذف پیام بارگذاری اگر وجود دارد
+            if loading_message:
+                try:
+                    await loading_message.delete()
+                except Exception as e:
+                    logger.error(f"خطا در حذف پیام بارگذاری: {e}")
 
             # ارسال پیام
             await context.bot.send_message(
