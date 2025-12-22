@@ -7,6 +7,7 @@ import httpx
 from playwright.async_api import async_playwright
 from typing import Optional, List, Dict
 import os
+from constants import BotConstants
 
 
 class ForexNewsFetcher:
@@ -257,11 +258,10 @@ class ForexNewsFetcher:
                         msg_lines.append(f"{ev['color']} {ev['currency']} {ev['time']} - {ev['name_fa']}")
                     msg_lines.append("")
 
-            msg_lines.append("─" * 3)
+            msg_lines.append("─" * 35)
             msg_lines.append("منبع: ForexFactory.live")
             msg_lines.append("")
-            msg_lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
-            msg_lines.append("@arzzalanbot")
+            msg_lines.append(BotConstants.get_message_footer(include_divider=False))
 
             return "\n".join(msg_lines)
 
@@ -287,11 +287,9 @@ class ForexNewsFetcher:
 • [FXStreet Calendar](https://www.fxstreet.com/economic-calendar)
 
 این قابلیت به‌زودی با منبع دیگری جایگزین خواهد شد.
-
-─────────────────────────────
-ارزَلان دستیار اطلاع‌رسانی قیمت
-@arzzalanbot
 """
+        # اضافه کردن footer
+        error_msg += "\n\n" + BotConstants.get_message_footer(include_divider=True)
 
     async def get_weekly_news(self) -> Optional[str]:
         """
@@ -340,11 +338,10 @@ class ForexNewsFetcher:
 
                 msg_lines.append("")
 
-            msg_lines.append("─" * 3)
+            msg_lines.append("─" * 35)
             msg_lines.append("منبع: ForexFactory.live")
             msg_lines.append("")
-            msg_lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
-            msg_lines.append("@arzzalanbot")
+            msg_lines.append(BotConstants.get_message_footer(include_divider=False))
 
             return "\n".join(msg_lines)
 

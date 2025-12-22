@@ -5,6 +5,7 @@ import requests
 from bs4 import BeautifulSoup
 from typing import Optional, List, Dict
 from datetime import datetime
+from constants import BotConstants
 
 
 class SecurityNewsFetcher:
@@ -156,15 +157,12 @@ class SecurityNewsFetcher:
                     lines.append(link)
                 lines.append("")
 
-        # زمان به‌روزرسانی
-        lines.append("─" * 3)
-        now = datetime.now()
-        lines.append(f"🕐 {now.strftime('%Y-%m-%d %H:%M:%S')}")
+        # Footer استاندارد
         lines.append("")
+        lines.append("─" * 35)
         lines.append("منبع: arzdigital.com")
         lines.append("")
-        lines.append("ارزَلان دستیار اطلاع‌رسانی قیمت")
-        lines.append("@arzzalanbot")
+        lines.append(BotConstants.get_message_footer(include_divider=False))
 
         return "\n".join(lines)
 
@@ -178,15 +176,15 @@ class SecurityNewsFetcher:
         news_items = self.fetch_security_news()
 
         if not news_items:
-            return """🔒 *اخبار امنیت کریپتو*
+            error_msg = """🔒 *اخبار امنیت کریپتو*
 
 ⚠️ متأسفانه در حال حاضر نتوانستیم اخبار امنیتی را دریافت کنیم.
 
 🔗 می‌توانید مستقیماً از منبع مشاهده کنید:
 https://arzdigital.com/breaking/security/
-
-─────────────────────────────
-ارزَلان دستیار اطلاع‌رسانی قیمت
-@arzzalanbot"""
+"""
+            # اضافه کردن footer
+            error_msg += "\n" + BotConstants.get_message_footer(include_divider=True)
+            return error_msg
 
         return self.format_security_news_message(news_items)

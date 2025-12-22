@@ -31,6 +31,7 @@ from price_fetcher import PriceFetcher
 from news_fetcher import NewsFetcher
 from forex_news_fetcher import ForexNewsFetcher
 from security_news_fetcher import SecurityNewsFetcher
+from unified_news_fetcher import UnifiedNewsFetcher
 
 # تنظیم لاگ
 logging.basicConfig(
@@ -49,6 +50,7 @@ price_fetcher = PriceFetcher()
 news_fetcher = NewsFetcher()
 forex_news_fetcher = ForexNewsFetcher()
 security_news_fetcher = SecurityNewsFetcher()
+unified_news_fetcher = UnifiedNewsFetcher()
 
 
 class ArzalanBot:
@@ -251,7 +253,8 @@ class ArzalanBot:
                     [
                         InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
                         InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
-                    ]
+                    ],
+                    [InlineKeyboardButton("📰 خلاصه اخبار", callback_data='unified_news')]
                 ]
             else:
                 keyboard = [
@@ -259,7 +262,8 @@ class ArzalanBot:
                     [
                         InlineKeyboardButton("📋 انتخاب ارزها", callback_data='select_assets_main'),
                         InlineKeyboardButton("⏰ زمان‌بندی ارسال", callback_data='setup_schedule')
-                    ]
+                    ],
+                    [InlineKeyboardButton("📰 خلاصه اخبار", callback_data='unified_news')]
                 ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -346,7 +350,7 @@ class ArzalanBot:
             logger.error(f"خطا در ارسال قیمت: {e}")
 
     async def news_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """دستور /news - نمایش منوی انتخاب نوع خبر"""
+        """دستور /news - نمایش خلاصه اخبار یکپارچه"""
         # چک عضویت کاربر
         if not await self.require_membership(update, context):
             return
@@ -354,19 +358,83 @@ class ArzalanBot:
         # دریافت message object (چه از command باشه چه از keyboard button)
         message = update.message or update.effective_message
 
-        # ایجاد منوی انتخاب نوع خبر
-        keyboard = [
-            [InlineKeyboardButton("📰 اخبار کریپتو", callback_data='news_crypto')],
-            [InlineKeyboardButton("🌍 اخبار اقتصاد جهانی", callback_data='news_global')],
-            [InlineKeyboardButton("🔒 اخبار امنیت کریپتو", callback_data='news_security')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # ارسال پیام در حال پردازش
+        processing_msg = await message.reply_text("⏳ در حال دریافت اخبار...")
 
-        await message.reply_text(
-            "📰 *انتخاب نوع خبر*\n\nلطفاً نوع خبری که می‌خواهید مشاهده کنید را انتخاب کنید:",
-            parse_mode='Markdown',
-            reply_markup=reply_markup
-        )
+        try:
+            # دریافت اخبار یکپارچه
+            news_message = await unified_news_fetcher.get_unified_news()
+
+            if not news_message:
+                await processing_msg.edit_text(
+                    "❌ متأسفانه در دریافت اخبار خطایی رخ داد. لطفاً دوباره تلاش کنید."
+                )
+                return
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='unified_news')],
+                [InlineKeyboardButton("💰 دریافت قیمت‌ها", callback_data='send_prices_now')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # حذف پیام پردازش و ارسال پیام اصلی
+            await processing_msg.delete()
+            await message.reply_text(news_message, reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            user_id = update.effective_user.id
+            db.log_message(user_id, 'news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت اخبار: {e}")
+            await processing_msg.edit_text(
+                "❌ متأسفانه در دریافت اخبار خطایی رخ داد. لطفاً دوباره تلاش کنید."
+            )
+
+    async def unified_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """callback برای نمایش خلاصه اخبار یکپارچه"""
+        query = update.callback_query
+
+        # چک عضویت کاربر
+        if not await self.require_membership(update, context):
+            return
+
+        await query.answer("در حال دریافت اخبار...")
+
+        user_id = update.effective_user.id
+
+        try:
+            # دریافت اخبار یکپارچه
+            news_message = await unified_news_fetcher.get_unified_news()
+
+            if not news_message:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار خطایی رخ داد. لطفاً دوباره تلاش کنید."
+                )
+                return
+
+            # ایجاد دکمه‌های inline
+            keyboard = [
+                [InlineKeyboardButton("🔄 به‌روزرسانی", callback_data='unified_news')],
+                [InlineKeyboardButton("💰 دریافت قیمت‌ها", callback_data='send_prices_now')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            # ویرایش پیام
+            await query.edit_message_text(news_message, reply_markup=reply_markup)
+
+            # ثبت در تاریخچه
+            db.log_message(user_id, 'news_request')
+
+        except Exception as e:
+            logger.error(f"خطا در دریافت اخبار: {e}")
+            try:
+                await query.edit_message_text(
+                    "❌ متأسفانه در دریافت اخبار خطایی رخ داد. لطفاً دوباره تلاش کنید."
+                )
+            except:
+                pass
 
     async def crypto_news_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """callback برای نمایش اخبار کریپتو"""
@@ -2355,6 +2423,9 @@ class ArzalanBot:
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.security_news_callback, pattern='^news_security$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.unified_news_callback, pattern='^unified_news$'
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.global_weekly_news_callback, pattern='^global_weekly_news$'
