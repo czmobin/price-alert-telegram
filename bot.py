@@ -32,6 +32,7 @@ from news_fetcher import NewsFetcher
 from forex_news_fetcher import ForexNewsFetcher
 from security_news_fetcher import SecurityNewsFetcher
 from unified_news_fetcher import UnifiedNewsFetcher
+from constants import BotConstants
 
 # تنظیم لاگ
 logging.basicConfig(
@@ -51,6 +52,9 @@ news_fetcher = NewsFetcher()
 forex_news_fetcher = ForexNewsFetcher()
 security_news_fetcher = SecurityNewsFetcher()
 unified_news_fetcher = UnifiedNewsFetcher()
+
+# تنظیم نمونه database برای BotConstants
+BotConstants.set_db_instance(db)
 
 
 class ArzalanBot:
@@ -1917,6 +1921,7 @@ class ArzalanBot:
             [InlineKeyboardButton("🔥 محبوب‌ترین ارزها", callback_data='admin_stats_popular_cryptos')],
             [InlineKeyboardButton("📈 فعالیت کاربران", callback_data='admin_stats_activity')],
             [InlineKeyboardButton("👤 کاربران اخیر", callback_data='admin_recent_users')],
+            [InlineKeyboardButton("✏️ ویرایش Footer", callback_data='admin_edit_footer')],
             [InlineKeyboardButton("📢 ارسال پیام همگانی", callback_data='admin_broadcast')],
             [InlineKeyboardButton("🔙 بستن پنل", callback_data='admin_close')]
         ]
@@ -2172,6 +2177,102 @@ class ArzalanBot:
         await query.answer()
         await self.show_admin_panel(update, context)
 
+    async def set_footer_text_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دستور /setfootertext - تنظیم متن footer"""
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await update.message.reply_text("⛔️ شما دسترسی به این دستور ندارید.")
+            return
+
+        # دریافت متن جدید
+        if not context.args:
+            await update.message.reply_text("❌ لطفاً متن جدید را وارد کنید.\n\nمثال:\n/setfootertext ربات قیمت‌یاب ارزَلان")
+            return
+
+        new_text = ' '.join(context.args)
+
+        # ذخیره در database
+        success = db.update_footer_settings(footer_text=new_text, updated_by=user_id)
+
+        if success:
+            await update.message.reply_text(f"✅ متن footer با موفقیت به‌روزرسانی شد:\n\n{new_text}")
+        else:
+            await update.message.reply_text("❌ خطا در به‌روزرسانی متن footer")
+
+    async def set_footer_username_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """دستور /setfooterusername - تنظیم یوزرنیم footer"""
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await update.message.reply_text("⛔️ شما دسترسی به این دستور ندارید.")
+            return
+
+        # دریافت یوزرنیم جدید
+        if not context.args:
+            await update.message.reply_text("❌ لطفاً یوزرنیم جدید را وارد کنید.\n\nمثال:\n/setfooterusername @newbotusername")
+            return
+
+        new_username = context.args[0]
+
+        # اطمینان از شروع با @
+        if not new_username.startswith('@'):
+            new_username = '@' + new_username
+
+        # ذخیره در database
+        success = db.update_footer_settings(footer_username=new_username, updated_by=user_id)
+
+        if success:
+            await update.message.reply_text(f"✅ یوزرنیم footer با موفقیت به‌روزرسانی شد:\n\n{new_username}")
+        else:
+            await update.message.reply_text("❌ خطا در به‌روزرسانی یوزرنیم footer")
+
+    async def admin_edit_footer_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """نمایش فرم ویرایش footer"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        # چک ادمین بودن
+        if not await self.is_admin(user_id):
+            await query.answer("⛔️ دسترسی غیرمجاز", show_alert=True)
+            return
+
+        await query.answer()
+
+        # دریافت تنظیمات فعلی
+        footer_settings = db.get_footer_settings()
+        current_text = footer_settings.get('footer_text', 'ارزَلان دستیار اطلاع‌رسانی قیمت‌ها')
+        current_username = footer_settings.get('footer_username', '@arzzalanbot')
+
+        message = f"""✏️ ویرایش Footer پیام‌ها
+
+📝 متن فعلی:
+{current_text}
+
+👤 یوزرنیم فعلی:
+{current_username}
+
+برای ویرایش، دستوری رو که می‌خواهید ارسال کنید:
+
+• برای تغییر متن:
+/setfootertext متن جدید
+
+• برای تغییر یوزرنیم:
+/setfooterusername @username
+
+مثال:
+/setfootertext ربات قیمت‌یاب ارزَلان
+/setfooterusername @newbotusername"""
+
+        keyboard = [
+            [InlineKeyboardButton("🔙 بازگشت به پنل", callback_data='admin_panel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup)
+
     async def admin_close_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """بستن پنل ادمین"""
         query = update.callback_query
@@ -2407,6 +2508,8 @@ class ArzalanBot:
         self.application.add_handler(CommandHandler('help', self.help_command))
         self.application.add_handler(CommandHandler('settings', self.settings_command))
         self.application.add_handler(CommandHandler('admin', self.admin_panel_command))
+        self.application.add_handler(CommandHandler('setfootertext', self.set_footer_text_command))
+        self.application.add_handler(CommandHandler('setfooterusername', self.set_footer_username_command))
         self.application.add_handler(CommandHandler('news', self.news_command))
         self.application.add_handler(CommandHandler('forexnews', self.forex_news_command))
 
@@ -2560,6 +2663,9 @@ class ArzalanBot:
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.admin_broadcast_cancel_callback, pattern='^admin_broadcast_cancel$'
+        ))
+        self.application.add_handler(CallbackQueryHandler(
+            self.admin_edit_footer_callback, pattern='^admin_edit_footer$'
         ))
         self.application.add_handler(CallbackQueryHandler(
             self.admin_close_callback, pattern='^admin_close$'

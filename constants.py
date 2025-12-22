@@ -7,15 +7,23 @@ from jdatetime import datetime as jalalidatetime
 class BotConstants:
     """کلاس نگهداری ثابت‌ها و فرمت‌های مشترک"""
 
-    # اطلاعات ربات
+    # اطلاعات ربات (پیش‌فرض)
     BOT_NAME = "ارزَلان"
-    BOT_USERNAME = "@arzzalanbot"
-    BOT_DESCRIPTION = "دستیار اطلاع‌رسانی قیمت‌ها"
+    DEFAULT_FOOTER_TEXT = "ارزَلان دستیار اطلاع‌رسانی قیمت‌ها"
+    DEFAULT_FOOTER_USERNAME = "@arzzalanbot"
 
-    @staticmethod
-    def get_message_footer(include_divider: bool = True) -> str:
+    # نمونه database برای دسترسی عمومی
+    _db_instance = None
+
+    @classmethod
+    def set_db_instance(cls, db_instance):
+        """تنظیم نمونه database برای استفاده در کلاس"""
+        cls._db_instance = db_instance
+
+    @classmethod
+    def get_message_footer(cls, include_divider: bool = True) -> str:
         """
-        دریافت footer استاندارد برای پیام‌ها
+        دریافت footer استاندارد برای پیام‌ها (از database)
 
         Args:
             include_divider: آیا خط جداکننده اضافه شود یا نه
@@ -35,8 +43,23 @@ class BotConstants:
 
         lines.append(f"🕐 {jalali_date} - {jalali_time}")
         lines.append("--")
-        lines.append(f"{BotConstants.BOT_NAME} {BotConstants.BOT_DESCRIPTION}")
-        lines.append(BotConstants.BOT_USERNAME)
+
+        # دریافت footer از database
+        if cls._db_instance:
+            try:
+                footer_settings = cls._db_instance.get_footer_settings()
+                footer_text = footer_settings.get('footer_text', cls.DEFAULT_FOOTER_TEXT)
+                footer_username = footer_settings.get('footer_username', cls.DEFAULT_FOOTER_USERNAME)
+            except Exception as e:
+                print(f"خطا در دریافت footer از database: {e}")
+                footer_text = cls.DEFAULT_FOOTER_TEXT
+                footer_username = cls.DEFAULT_FOOTER_USERNAME
+        else:
+            footer_text = cls.DEFAULT_FOOTER_TEXT
+            footer_username = cls.DEFAULT_FOOTER_USERNAME
+
+        lines.append(footer_text)
+        lines.append(footer_username)
 
         return "\n".join(lines)
 

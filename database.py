@@ -98,6 +98,27 @@ class Database:
             )
         ''')
 
+        # جدول تنظیمات عمومی ربات
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_by INTEGER
+            )
+        ''')
+
+        # مقداردهی اولیه footer
+        cursor.execute('''
+            INSERT OR IGNORE INTO bot_settings (key, value)
+            VALUES ('footer_text', 'ارزَلان دستیار اطلاع‌رسانی قیمت‌ها')
+        ''')
+
+        cursor.execute('''
+            INSERT OR IGNORE INTO bot_settings (key, value)
+            VALUES ('footer_username', '@arzzalanbot')
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -665,6 +686,66 @@ class Database:
             return True
         except Exception as e:
             print(f"خطا در حذف زمان‌بندی: {e}")
+            return False
+
+    def get_bot_setting(self, key: str, default: str = '') -> str:
+        """دریافت یک تنظیم عمومی ربات"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT value FROM bot_settings WHERE key = ?', (key,))
+            row = cursor.fetchone()
+
+            conn.close()
+
+            if row:
+                return row['value']
+            return default
+        except Exception as e:
+            print(f"خطا در دریافت تنظیم {key}: {e}")
+            return default
+
+    def set_bot_setting(self, key: str, value: str, updated_by: int = None) -> bool:
+        """ذخیره یک تنظیم عمومی ربات"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT INTO bot_settings (key, value, updated_by, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_by = excluded.updated_by,
+                    updated_at = CURRENT_TIMESTAMP
+            ''', (key, value, updated_by))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"خطا در ذخیره تنظیم {key}: {e}")
+            return False
+
+    def get_footer_settings(self) -> Dict[str, str]:
+        """دریافت تنظیمات footer"""
+        return {
+            'footer_text': self.get_bot_setting('footer_text', 'ارزَلان دستیار اطلاع‌رسانی قیمت‌ها'),
+            'footer_username': self.get_bot_setting('footer_username', '@arzzalanbot')
+        }
+
+    def update_footer_settings(self, footer_text: str = None, footer_username: str = None, updated_by: int = None) -> bool:
+        """به‌روزرسانی تنظیمات footer"""
+        try:
+            success = True
+            if footer_text is not None:
+                success = success and self.set_bot_setting('footer_text', footer_text, updated_by)
+            if footer_username is not None:
+                success = success and self.set_bot_setting('footer_username', footer_username, updated_by)
+            return success
+        except Exception as e:
+            print(f"خطا در به‌روزرسانی footer: {e}")
             return False
 
     def get_user_schedules(self, user_id: int) -> List[Dict[str, Any]]:
