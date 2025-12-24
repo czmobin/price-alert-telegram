@@ -435,13 +435,18 @@ class PriceFetcher:
 
     async def get_usd_irr_price(self) -> Optional[Dict]:
         """
-        دریافت قیمت دلار به تومان (با استفاده از tgju API و fallback به روش‌های قدیمی)
+        دریافت قیمت دلار به تومان (با اولویت bonbast، سپس tgju و accessban)
 
         Returns:
             dict: {'price': 580000, 'change_7d': -0.5}
         """
         try:
-            # روش 1: استفاده از API سریع tgju (بدون نیاز به مرورگر)
+            # روش 1 (اولویت اول): استفاده از bonbast
+            bonbast_data = await self._get_usd_from_bonbast()
+            if bonbast_data and bonbast_data.get('price', 0) > 0:
+                return bonbast_data
+
+            # روش 2 (fallback): استفاده از API tgju
             tgju_data = self._fetch_tgju_price('PRICE_DOLLAR_RL')
             if tgju_data and tgju_data.get('price', 0) > 0:
                 # قیمت در tgju به ریال است، تبدیل به تومان می‌کنیم
@@ -454,7 +459,7 @@ class PriceFetcher:
                     'symbol': '💵'
                 }
 
-            # روش 2 (fallback): استفاده از API accessban
+            # روش 3 (fallback): استفاده از API accessban
             url = "https://api.accessban.com/v1/market/indicator/summary-table-data/price_dollar_rl"
             response = self.session.get(url, timeout=10)
 
@@ -494,12 +499,12 @@ class PriceFetcher:
                             'symbol': '💵'
                         }
 
-            # روش 3 (fallback نهایی): استفاده از API bonbast (غیررسمی)
-            return await self._get_usd_from_bonbast()
+            # اگر همه روش‌ها fail شدند
+            return None
 
         except Exception as e:
             print(f"خطا در دریافت قیمت دلار: {e}")
-            return await self._get_usd_from_bonbast()
+            return None
 
     async def _get_bonbast_data(self, use_cache: bool = True) -> Optional[Dict]:
         """
