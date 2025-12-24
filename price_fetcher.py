@@ -693,10 +693,10 @@ class PriceFetcher:
                 if item_id in tgju_symbol_map:
                     tgju_data = self._fetch_tgju_price(tgju_symbol_map[item_id])
                     if tgju_data and tgju_data.get('price', 0) > 0:
-                        # قیمت در tgju به تومان است
+                        # قیمت در tgju به ریال است، تبدیل به تومان می‌کنیم
                         result[item_id] = {
                             'name': GOLD_ITEMS.get(item_id, {}).get('name', item_id),
-                            'price': tgju_data['price'],
+                            'price': tgju_data['price'] / 10,  # تبدیل ریال به تومان
                             'unit': 'تومان',
                             'symbol': GOLD_ITEMS.get(item_id, {}).get('symbol', '✨')
                         }
