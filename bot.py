@@ -1849,6 +1849,25 @@ class ArzalanBot:
         except Exception as e:
             logger.error(f"❌ خطا در بررسی سقف قیمتی: {e}")
 
+    async def refresh_bonbast_cache(self, context: ContextTypes.DEFAULT_TYPE):
+        """
+        به‌روزرسانی cache bonbast به‌صورت دوره‌ای
+        (این تابع هر 2 دقیقه یکبار اجرا می‌شود تا cache همیشه fresh باشد)
+        """
+        try:
+            logger.info("🔄 در حال به‌روزرسانی cache bonbast...")
+
+            # دریافت داده‌ها از bonbast (این باعث refresh شدن cache میشه)
+            rates = await price_fetcher.bonbast_scraper.get_rates()
+
+            if rates:
+                logger.info("✅ cache bonbast به‌روزرسانی شد")
+            else:
+                logger.warning("⚠️ نتونستم cache bonbast رو به‌روزرسانی کنم")
+
+        except Exception as e:
+            logger.error(f"❌ خطا در به‌روزرسانی cache bonbast: {e}")
+
     async def send_ceiling_alert_to_users(self, context: ContextTypes.DEFAULT_TYPE, alert_info: Dict):
         """
         ارسال پیام هشدار سقف قیمتی به همه کاربران فعال
@@ -3081,6 +3100,15 @@ class ArzalanBot:
             name='price_ceiling_monitor'
         )
         logger.info("🔔 سیستم رصد سقف قیمتی فعال شد (هر 10 دقیقه)")
+
+        # راه‌اندازی سیستم refresh کردن cache bonbast (هر 2 دقیقه یکبار)
+        self.application.job_queue.run_repeating(
+            self.refresh_bonbast_cache,
+            interval=120,  # 2 دقیقه = 120 ثانیه
+            first=5,  # اولین refresh بعد از 5 ثانیه
+            name='bonbast_cache_refresher'
+        )
+        logger.info("⚡ سیستم refresh cache bonbast فعال شد (هر 2 دقیقه)")
 
         # اجرای ربات
         logger.info("ربات دستیار ارزَلان در حال اجرا است...")
