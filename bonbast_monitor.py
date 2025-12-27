@@ -2,12 +2,18 @@ import asyncio
 from playwright.async_api import async_playwright
 import requests
 import json
+from datetime import datetime, timedelta
 
 class BonbastScraper:
     def __init__(self):
         self.url = 'https://www.bonbast.com/'
         self.api_url = 'https://www.bonbast.com/json'
-        
+        # Cache برای param و cookies (30 دقیقه اعتبار)
+        self._cached_param = None
+        self._cached_cookies = None
+        self._cache_time = None
+        self._cache_duration = timedelta(minutes=30)
+
     async def capture_param_and_cookies(self):
         """فقط گرفتن param و cookies از مرورگر"""
         print("🌐 باز کردن مرورگر...")
@@ -44,9 +50,9 @@ class BonbastScraper:
             # رفتن به صفحه
             await page.goto(self.url, wait_until='domcontentloaded')
             
-            # صبر برای request (حداکثر 70 ثانیه)
+            # صبر برای request (حداکثر 15 ثانیه - کاهش یافته برای سرعت بیشتر)
             print("⏳ صبر برای request...")
-            for i in range(70):
+            for i in range(15):
                 if captured_data['param']:
                     break
                 await asyncio.sleep(1)
@@ -108,14 +114,38 @@ class BonbastScraper:
             return None
     
     async def get_rates(self):
-        """گرفتن نرخ ارز"""
+        """گرفتن نرخ ارز با استفاده از cache"""
+        # چک کردن cache
+        if self._is_cache_valid():
+            print("⚡ استفاده از cache (سریع!)")
+            rates = self.fetch_rates(self._cached_param, self._cached_cookies)
+            if rates:
+                return rates
+            # اگر cache کار نکرد، دوباره بگیر
+            print("⚠️ cache منقضی شده، دریافت مجدد...")
+
+        # دریافت param و cookies جدید
         param, cookies = await self.capture_param_and_cookies()
 
         if not param or not cookies:
             print("❌ نتونستم param/cookies رو بگیرم!")
             return None
 
+        # ذخیره در cache
+        self._cached_param = param
+        self._cached_cookies = cookies
+        self._cache_time = datetime.now()
+
         return self.fetch_rates(param, cookies)
+
+    def _is_cache_valid(self) -> bool:
+        """بررسی معتبر بودن cache"""
+        if not self._cached_param or not self._cached_cookies or not self._cache_time:
+            return False
+
+        # چک کردن زمان
+        elapsed = datetime.now() - self._cache_time
+        return elapsed < self._cache_duration
 
     def extract_currency_data(self, rates: dict) -> dict:
         """
