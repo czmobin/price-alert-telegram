@@ -544,7 +544,7 @@ class PriceFetcher:
                 usd_data = bonbast_data['currencies'].get('usd')
                 if usd_data:
                     return {
-                        'price': usd_data['sell'],
+                        'price': usd_data['buy'],  # استفاده از قیمت خرید (مثل ارزهای فیات)
                         'change_24h': 0,
                         'change_7d': 0,
                         'unit': 'تومان',
